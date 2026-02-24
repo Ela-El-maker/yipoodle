@@ -48,24 +48,24 @@ Yipoodle solves all three by building a fully deterministic pipeline: every synt
 │              ~40 subcommands — single entry point               │
 └─────────────┬───────────┬──────────┬──────────┬─────────────────┘
               │           │          │          │
-     ┌────────▼───┐  ┌────▼────┐  ┌─▼──────┐  ┌▼──────────────┐
-     │  Research   │  │ Tiny    │  │ Query  │  │  Automation   │
-     │  Pipeline   │  │ GPT    │  │ Router │  │  Engine       │
+     ┌────────▼───┐  ┌────▼────┐  ┌-─▼─────┐  ┌-▼─────────────┐
+     │  Research  │  │ Tiny    │  │ Query  │  │  Automation   │
+     │  Pipeline  │  │ GPT     │  │ Router │  │  Engine       │
      └──────┬─────┘  └────┬────┘  └───┬────┘  └──────┬────────┘
             │              │          │               │
    ┌────────┼──────────┐   │    ┌─────┼────┐    ┌─────┼────────┐
    │        │          │   │    │     │    │    │     │        │
-┌──▼──┐  ┌──▼──┐  ┌───▼┐  │  ┌─▼─┐ ┌─▼─┐ ┌▼─┐ │  ┌──▼──┐  ┌─▼──┐
-│Sync │  │Index│  │Ret-│  │  │Ask│ │Mon│ │No│ │  │Alert│  │Cron│
-│Paper│  │Build│  │riev│  │  │   │ │ito│ │te│ │  │Disp│  │Schd│
-│     │  │     │  │al  │  │  │   │ │r  │ │s │ │  │atch│  │    │
-└──┬──┘  └──┬──┘  └─┬──┘  │  └───┘ └───┘ └──┘ │  └─────┘  └────┘
-   │        │       │     │                    │
-┌──▼────────▼───────▼─────▼────────────────────▼──────────────────┐
-│                     Core Data Layer                              │
-│  SQLite (papers.db)  │  JSON artifacts  │  KB (knowledge.db)    │
-│  FAISS vectors       │  BM25 indexes    │  Live snapshots       │
-└─────────────────────────────────────────────────────────────────┘
+┌──▼──┐  ┌──▼──┐   ┌───▼┐  │  ┌─▼─┐ ┌─▼─┐ ┌▼─┐  │  ┌──▼──┐  ┌-─▼─┐
+│Sync │  │Index│   │Ret-│  │  │Ask│ │Mon│ │No│  │  │Alert│  │Cron│
+│Paper│  │Build│   │riev│  │  │   │ │ito│ │te│  │  │Disp │  │Schd│
+│     │  │     │   │al  │  │  │   │ │r  │ │s │  │  │atch │  │    │
+└──┬──┘  └──┬──┘   └─┬──┘  │  └───┘ └───┘ └──┘  │  └─────┘  └────┘
+   │        │        │     │                    │
+┌──▼────────▼──────-─▼────-▼────────────────────▼────────────────┐
+│                     Core Data Layer                            │
+│  SQLite (papers.db)  │  JSON artifacts  │  KB (knowledge.db)   │
+│  FAISS vectors       │  BM25 indexes    │  Live snapshots      │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 For the full architecture document, see [docs/architecture.md](docs/architecture.md).
