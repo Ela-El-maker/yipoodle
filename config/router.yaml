@@ -1,0 +1,13 @@
+router:
+  default_mode: auto
+  ask:
+    max_words_short_question: 14
+    citation_notice_on_keywords: [cite, citation, literature, sources, papers]
+    definition_patterns: ["what is", "what are", "define", "explain"]
+    model_fallback:
+      enabled: false
+  monitor:
+    intent_keywords: [monitor, track, notify, alert]
+    default_schedule_cron: "0 */6 * * *"
+  notes:
+    intent_keywords: [notes, study notes, summarize as notes, store this]

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "papers": [
+    {
+      "paper_id": "arxiv:1234.5678",
+      "checks": [
+        {
+          "id": "contains_model_claim",
+          "type": "contains",
+          "needle": "lightweight segmentation model",
+          "weight": 1.0
+        },
+        {
+          "id": "ordered_limitation_then_context",
+          "type": "ordered_contains",
+          "needles": [
+            "limitation",
+            "hair-like boundaries"
+          ],
+          "weight": 1.0
+        }
+      ]
+    },
+    {
+      "paper_id": "doi:10.1000/test",
+      "checks": [
+        {
+          "id": "contains_distillation_boundary",
+          "type": "contains",
+          "needle": "distillation method improves boundary detail",
+          "weight": 1.0
+        },
+        {
+          "id": "ordered_runtime_then_future_work",
+          "type": "ordered_contains",
+          "needles": [
+            "runtime under 20 ms",
+            "future work includes cross-domain adaptation"
+          ],
+          "weight": 1.0
+        }
+      ]
+    }
+  ]
+}

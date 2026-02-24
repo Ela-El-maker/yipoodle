@@ -1,0 +1,18 @@
+[
+  {
+    "type": "sqlite",
+    "path": "/home/ela/Work-Force/Artifacts/Yipoodle/data/papers_test.db"
+  },
+  {
+    "type": "sqlite",
+    "path": "/home/ela/Work-Force/Artifacts/Yipoodle/data/papers_test2.db"
+  },
+  {
+    "type": "sqlite",
+    "path": "/home/ela/Work-Force/Artifacts/Yipoodle/data/papers_test3.db"
+  },
+  {
+    "type": "sqlite",
+    "path": "/home/ela/Work-Force/Artifacts/Yipoodle/data/papers_cv.db"
+  }
+]

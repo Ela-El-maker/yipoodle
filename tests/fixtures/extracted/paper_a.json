@@ -1,0 +1,34 @@
+{
+  "paper": {
+    "paper_id": "arxiv:1234.5678",
+    "title": "Realtime Mobile Segmentation",
+    "authors": ["A Author"],
+    "year": 2024,
+    "venue": "arXiv",
+    "source": "arxiv",
+    "abstract": "Lightweight segmentation for phones",
+    "pdf_path": null,
+    "url": "https://arxiv.org/pdf/1234.5678.pdf",
+    "doi": null,
+    "arxiv_id": "1234.5678",
+    "sync_timestamp": "2026-01-01T00:00:00Z"
+  },
+  "snippets": [
+    {
+      "snippet_id": "Parxiv_1234_5678:S1",
+      "paper_id": "arxiv:1234.5678",
+      "section": "abstract",
+      "text": "We propose a lightweight segmentation model with 72 FPS on mobile GPU and strong edge quality.",
+      "page_hint": 1,
+      "token_count": 17
+    },
+    {
+      "snippet_id": "Parxiv_1234_5678:S2",
+      "paper_id": "arxiv:1234.5678",
+      "section": "results",
+      "text": "Limitation: fails on transparent objects and hair-like boundaries in low light scenes.",
+      "page_hint": 2,
+      "token_count": 13
+    }
+  ]
+}

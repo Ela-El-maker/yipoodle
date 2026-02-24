@@ -1,0 +1,12 @@
+[
+  {"question": "23 + 34 = ?", "expected_mode": "ask"},
+  {"question": "What is an algorithm?", "expected_mode": "ask"},
+  {"question": "45 km/h to m/s", "expected_mode": "ask"},
+  {"question": "Define overfitting", "expected_mode": "ask"},
+  {"question": "Monitor NVIDIA stock and alert me", "expected_mode": "monitor"},
+  {"question": "Track PIX outage signals", "expected_mode": "monitor"},
+  {"question": "Create study notes on transformers", "expected_mode": "notes"},
+  {"question": "Summarize as notes the segmentation failure modes", "expected_mode": "notes"},
+  {"question": "Compare ViT and CNN tradeoffs with citations", "expected_mode": "research"},
+  {"question": "What does literature say about boundary-aware distillation limits?", "expected_mode": "research"}
+]

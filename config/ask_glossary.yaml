@@ -1,0 +1,4 @@
+glossary:
+  algorithm: "An algorithm is a finite, step-by-step procedure for solving a problem or performing a computation."
+  overfitting: "Overfitting is when a model learns training noise instead of general patterns, hurting performance on unseen data."
+  amortization: "Amortization is the gradual repayment of a loan over time through scheduled payments of principal and interest."

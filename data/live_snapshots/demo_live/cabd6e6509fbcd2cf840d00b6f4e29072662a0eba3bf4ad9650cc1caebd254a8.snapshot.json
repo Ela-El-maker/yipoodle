@@ -1,0 +1,20 @@
+{
+  "snapshot_id": "410c38b87bf501ce",
+  "source": "demo_live",
+  "query": "mobile segmentation limitations",
+  "retrieved_at": "2026-02-23T19:55:31.556505Z",
+  "content_hash": "410c38b87bf501ce608d60bbdba4847c5f59eb0c12dd5da3cc8f5e3b539d8ec6",
+  "cache_key": "cabd6e6509fbcd2cf840d00b6f4e29072662a0eba3bf4ad9650cc1caebd254a8",
+  "items": [
+    {
+      "id": "x1",
+      "url": "https://x",
+      "title": null,
+      "text": "fresh live evidence",
+      "published_at": null,
+      "source": "demo_live",
+      "raw_meta": {}
+    }
+  ],
+  "raw_path": "data/live_snapshots/demo_live/cabd6e6509fbcd2cf840d00b6f4e29072662a0eba3bf4ad9650cc1caebd254a8.raw.txt"
+}

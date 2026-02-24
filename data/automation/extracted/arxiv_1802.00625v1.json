@@ -1,0 +1,188 @@
+{
+  "paper": {
+    "paper_id": "arxiv:1802.00625v1",
+    "title": "Real-Time-Data Analytics in Raw Materials Handling",
+    "authors": [
+      "Christopher Josef Rothschedl",
+      "Roland Ritt",
+      "Paul O'Leary",
+      "Matthew Harker",
+      "Michael Habacher",
+      "Michael Brandner"
+    ],
+    "year": 2018,
+    "venue": "arXiv",
+    "source": "arxiv",
+    "abstract": "This paper proposes a system for the ingestion and analysis of real-time sensor and actor data of bulk materials handling plants and machinery. It references issues that concern mining sensor data in cyber physical systems (CPS). The advance of cyber physical systems has created a significant change in the architecture of sensor and actor data. It affects the complexity of the observed systems in general, the number of signals being processed, the spatial distribution of the signal sources on a machine or plant and the global availability of the data. There are different definitions for what constitutes cyber physical systems: the most succinct and pertinent to the work shown in this paper is the definition given by the IEEE: A CPS is a system with a coupling of the cyber aspects of computing and communications with the physical aspects of dynamics and engineering that must abide by the laws of physics. This includes sensor networks, real-time and hybrid systems. Results computed from sensor and actor data must obey the equations used for modelling the physics of the observed system - this fundamentally poses an inverse problem. Such problems are not covered sufficiently by literature addressing mining of sensor data. Even available standard books on mining sensor data do not discuss the special nature of sensor data. Typically, present approaches of mining data rely on correlation as being a sole, reliable measure for significance. It is not taken into account that the inverse solutions to the model-describing equations are required to establish a semantic link between a sensor observation and its precedent cause. Without this link - without causality - there can be no physics based knowledge discovery.",
+    "pdf_path": "data/automation/papers/arxiv_1802.00625v1.pdf",
+    "url": "https://arxiv.org/pdf/1802.00625v1",
+    "doi": null,
+    "arxiv_id": "1802.00625v1",
+    "openalex_id": null,
+    "citation_count": 0,
+    "is_open_access": true,
+    "sync_timestamp": "2026-02-20 17:50:38.452471+00:00"
+  },
+  "snippets": [
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S1",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "144 Real-Time-Data Analytics in Raw Materials HandlingChristopher Rothschedl, Roland Ritt, Paul O'Leary,Matthew Harker, Michael Habacher, Michael Brandner1 Introductionmust abide by the laws of phys-icsmustinverse problemmining of sensor datacausality 145 2 System PremissdatainformationknowledgeunderstandingwisdomFig. 1: The process behind the data analysis system.",
+      "page_hint": null,
+      "token_count": 40,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S2",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "146 metadatacontextsignificanceknowledgehuman-machine interactionunderstandingAdvanced Symbolic Time Series Analysis (ASTSA)verbsnounsAdverbsadjectivesPunctuationEngineering feedback3 Data Ingestion 147 Fig. 2: This illustration shows the main processes of data ingestion. The top section correspondsto the machine or plant on which data is being collected, while the bottom part represents the data center located at a different location. The data is provided in several formats after it has been ingested.",
+      "page_hint": null,
+      "token_count": 62,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S3",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "148 Fig. 3: Three single days of data are assembled to a contiguous data stream. The illustrated con-tiguous section corresponds to the time portion a ship loader needs to load a vessel: this enables evaluations based on time ranges that are significant to particular fields of inter-est.",
+      "page_hint": null,
+      "token_count": 47,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S4",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "149 4 Systems Currently Being Monitored Fig. 4: Examples of four systems that are currently being monitored using the described ap-proach: a) ship loader, b) mobile sizing rig, c) bucket-wheel excavator, d) bucket-wheel reclaimer. The sensor channels of these systems are monitored with a sampling interval of 1s. (Sources: (a) \u2013 http://www.flickriver.com/photos/impalatermnals_images/17557941415/, retrieved on 2016-02-08; (b), (c), (d) \u2013 Courtesy of Sandvik.)5 Exemplary Data EvaluationsCondition Monitoring:Commissioning:",
+      "page_hint": null,
+      "token_count": 66,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S5",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "150 Fleet management:Automatic Operations Recognition:Incident Analysis:Logistics Optimisation: 151 5.1 Incident AnalysisFig. 5: This example of incident analysis shows data for a time period of two months, acquired with a sampling time of 1s. Each vertical line corresponds to an event; 63 events were found in total by using Advanced Symbolic Time Series Analysis (ASTSA). Every event corresponds to an inappropriate operation of the machine: the data can be zoomed in on automatically for every single event to perform local analysis, i.e., in the seconds and minutes right before the occurrence of the event (see Fig. 6).Fig. 6: Plots of the identified events with 1s resolution for three of the 63 events reported in Fig. 5.5.2 Long-Term Logistics Optimisation",
+      "page_hint": null,
+      "token_count": 118,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S6",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "152 Fig. 7: Polar histogram of loading on the slew bearing of a bucket-wheel reclaimer. The data has been aggregated with a sampling time of 1s over an observation period of one year.6 ConclusionsREFERENCES",
+      "page_hint": null,
+      "token_count": 34,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    },
+    {
+      "snippet_id": "Parxiv_1802_00625v1:S7",
+      "paper_id": "arxiv:1802.00625v1",
+      "section": "body",
+      "text": "153",
+      "page_hint": null,
+      "token_count": 1,
+      "paper_year": 2018,
+      "paper_venue": "arXiv",
+      "citation_count": 0,
+      "extraction_quality_score": 0.8874938078269567,
+      "extraction_quality_band": "good",
+      "extraction_source": "native"
+    }
+  ],
+  "extraction_meta": {
+    "extractor": "pypdf",
+    "two_column_applied": false,
+    "ocr_applied": false,
+    "pages_total": 10,
+    "empty_pages": 0,
+    "empty_page_pct": 0.0,
+    "page_stats": [
+      {
+        "page": 1,
+        "chars": 251,
+        "empty": false
+      },
+      {
+        "page": 2,
+        "chars": 115,
+        "empty": false
+      },
+      {
+        "page": 3,
+        "chars": 198,
+        "empty": false
+      },
+      {
+        "page": 4,
+        "chars": 308,
+        "empty": false
+      },
+      {
+        "page": 5,
+        "chars": 288,
+        "empty": false
+      },
+      {
+        "page": 6,
+        "chars": 524,
+        "empty": false
+      },
+      {
+        "page": 7,
+        "chars": 95,
+        "empty": false
+      },
+      {
+        "page": 8,
+        "chars": 669,
+        "empty": false
+      },
+      {
+        "page": 9,
+        "chars": 206,
+        "empty": false
+      },
+      {
+        "page": 10,
+        "chars": 3,
+        "empty": false
+      }
+    ],
+    "quality_score": 0.8875,
+    "quality_band": "good"
+  }
+}

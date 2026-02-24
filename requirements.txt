@@ -1,0 +1,10 @@
+torch==2.5.1
+pydantic==2.10.6
+PyYAML==6.0.2
+requests==2.32.3
+pypdf==5.1.0
+pytest==8.3.4
+numpy==2.2.2
+cryptography>=43.0.0
+sentence-transformers==3.3.1
+faiss-cpu==1.9.0.post1

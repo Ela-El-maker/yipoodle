@@ -1,0 +1,84 @@
+domain: cloud_infrastructure
+
+description: >
+  Research ingestion configuration for cloud infrastructure topics including
+  distributed systems, SRE, networking, and platform reliability.
+
+ocr:
+  enabled: false
+  timeout_sec: 30
+  min_chars_trigger: 120
+  max_pages: 20
+  min_output_chars: 200
+  min_gain_chars: 40
+  min_confidence: 55.0
+  lang: eng
+  profile: sparse
+  noise_suppression: true
+
+sources:
+  arxiv:
+    enabled: true
+    endpoint: http://export.arxiv.org/api/query
+    categories: [cs.DC, cs.NI, cs.SE]
+    max_results: 45
+
+  openalex:
+    enabled: true
+    endpoint: https://api.openalex.org/works
+    filters:
+      concepts: [Distributed Systems, Computer Networks, Software Engineering]
+      publication_year: ">=2016"
+    max_results: 35
+
+  crossref:
+    enabled: true
+    endpoint: https://api.crossref.org/works
+    max_results: 20
+
+  github:
+    enabled: true
+    endpoint: https://api.github.com/search/repositories
+    max_results: 25
+    auth:
+      header: Authorization
+      value: Bearer ${GITHUB_TOKEN}
+
+  gdelt:
+    enabled: true
+    endpoint: https://api.gdeltproject.org/api/v2/doc/doc
+    max_results: 10
+
+  unpaywall:
+    enabled: true
+    endpoint: https://api.unpaywall.org/v2
+    required_query_params:
+      email: ${UNPAYWALL_EMAIL}
+
+  semanticscholar: {enabled: false, endpoint: https://api.semanticscholar.org/graph/v1/paper/search, max_results: 20}
+  paperswithcode: {enabled: false, endpoint: https://paperswithcode.com/api/v1/papers/}
+  dblp: {enabled: false, endpoint: https://dblp.org/search/publ/api, max_results: 20}
+  core: {enabled: false, endpoint: https://api.core.ac.uk/v3/search/works, max_results: 20}
+  openreview: {enabled: false, endpoint: https://api2.openreview.net/notes, max_results: 20}
+  zenodo: {enabled: false, endpoint: https://zenodo.org/api/records, max_results: 20}
+  opencitations: {enabled: false, endpoint: https://opencitations.net/index/api/v1/metadata, max_results: 20}
+  springer: {enabled: false, endpoint: https://api.springernature.com/metadata/json, max_results: 20}
+  ieee_xplore: {enabled: false, endpoint: https://ieeexploreapi.ieee.org/api/v1/search/articles, max_results: 20}
+  figshare: {enabled: false, endpoint: https://api.figshare.com/v2/articles, max_results: 20}
+  openml: {enabled: false, endpoint: https://www.openml.org/api/v1/json, max_results: 20}
+  wikidata: {enabled: false, endpoint: https://query.wikidata.org/sparql, max_results: 20}
+  orcid: {enabled: false, endpoint: https://pub.orcid.org/v3.0/expanded-search/, max_results: 20}
+
+limits:
+  default_max_results: 25
+  max_total_results: 130
+  max_pdf_downloads: 15
+  max_tokens_per_summary: 1200
+
+ranking:
+  strategy: hybrid
+  weights:
+    recency: 0.35
+    citation_count: 0.20
+    semantic_similarity: 0.30
+    source_trust: 0.15

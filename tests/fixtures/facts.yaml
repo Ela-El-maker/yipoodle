@@ -1,0 +1,22 @@
+project_name: Yipoodle Research Copilot
+summary: Offline-first tiny GPT plus research pipeline.
+stack:
+  - Python
+  - PyTorch
+  - SQLite
+commands:
+  - python -m src.cli train-tinygpt --data data/data.txt
+  - python -m src.cli research --question "mobile segmentation" 
+components:
+  - paper sync
+  - retrieval index
+  - report generator
+data_flow:
+  - sync papers
+  - extract snippets
+  - build index
+  - generate report
+endpoints:
+  - method: POST
+    path: /research
+    description: Generate a cited research report.

@@ -1,0 +1,158 @@
+global:
+  with_semantic_scholar: true
+  prefer_arxiv: true
+  require_pdf: false
+  with_vector: false
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  batch_size: 64
+  vector_index_type: flat
+  vector_nlist: 1024
+  vector_m: 32
+  vector_ef_construction: 200
+  vector_shards: 1
+  vector_train_sample_size: 200000
+  vector_service_endpoint: null
+  vector_nprobe: 16
+  vector_ef_search: 64
+  vector_topk_candidate_multiplier: 1.5
+  min_text_chars: 200
+  two_column_mode: auto
+  layout_engine: auto
+  # Used only when layout_engine=auto
+  layout_promotion_state: runs/audit/layout_promotion_state.json
+  layout_table_handling: linearize
+  layout_footnote_handling: append
+  layout_min_region_confidence: 0.55
+  ocr_enabled: false
+  ocr_timeout_sec: 30
+  ocr_min_chars_trigger: 120
+  ocr_max_pages: 20
+  ocr_min_output_chars: 200
+  ocr_min_gain_chars: 40
+  ocr_min_confidence: 45.0
+  ocr_lang: eng
+  ocr_profile: document
+  ocr_noise_suppression: true
+  retrieval_mode: hybrid
+  alpha: 0.6
+  max_per_paper: 2
+  quality_prior_weight: 0.15
+  run_benchmark: true
+  run_snapshot: true
+  continue_on_topic_error: true
+
+paths:
+  db_path: data/automation/papers.db
+  sources_config: config/sources.yaml
+  papers_dir: data/automation/papers
+  extracted_dir: data/automation/extracted
+  index_path: data/indexes/automation_index.json
+  # Optional explicit vector sidecars; when null, derived from index_path.
+  vector_index_path: null
+  vector_metadata_path: null
+  reports_dir: runs/research_reports/automation
+  audit_dir: runs/audit
+  snapshot_dir: runs/snapshots
+  cache_dir: runs/cache/research
+
+thresholds:
+  min_citation_coverage: 1.0
+  warn_evidence_usage_below: 0.7
+  fail_on_validation_error: true
+  min_snippets: 1
+  min_avg_chars_per_paper: 500
+  min_avg_chars_per_page: 80
+  max_extract_error_rate: 0.8
+  layout_promotion_enabled: true
+  layout_promotion_gold: tests/fixtures/extraction_gold.json
+  layout_promotion_min_weighted_score: 0.75
+  layout_promotion_max_weighted_regression: 0.02
+  layout_promotion_max_ordered_regression: 0.02
+  layout_promotion_max_page_nonempty_regression: 0.02
+  semantic_enabled: true
+  semantic_mode: offline
+  semantic_shadow_mode: true
+  semantic_min_support: 0.55
+  semantic_max_contradiction: 0.30
+  semantic_fail_on_low_support: false
+  online_semantic_model: gpt-4o-mini
+  online_semantic_timeout_sec: 12.0
+  online_semantic_max_checks: 12
+  online_semantic_on_warn_only: true
+  online_semantic_base_url: null
+  online_semantic_api_key: null
+
+alerts:
+  enabled: false
+  webhook_url: null
+  webhook_timeout_sec: 10
+  webhook_headers: {}
+  email_enabled: false
+  email_to:
+    - comjiji7@gmail.com
+  email_from: comjiji7@gmail.com
+  smtp_host: smtp.gmail.com
+  smtp_port: 465
+  smtp_use_ssl: true
+  smtp_username: comjiji7@gmail.com
+  smtp_password_env: GMAIL_APP_PASSWORD
+  on_corpus_unhealthy: true
+  on_topic_validation_failed: true
+  on_source_errors: true
+
+kb:
+  enabled_default: false
+  db_path: data/kb/knowledge.db
+
+monitoring:
+  enabled_default: false
+  baseline: previous_successful_run
+  failure_policy: fail_open
+  noise_defaults:
+    cooldown_minutes: 360
+    hysteresis_runs: 2
+  hooks:
+    enabled: true
+    allowlist:
+      - monitor_hooks.finance_rules
+      - monitor_hooks.policy_rules
+    timeout_sec: 5
+  digest:
+    enabled: true
+    window: daily
+    path: runs/audit/monitor_digest_queue.json
+
+topics:
+  - name: cv_mobile_segmentation_limits
+    query: "What are the main limitations and boundary failure modes in lightweight real-time mobile segmentation, and what mitigations do the papers propose?"
+    max_results: 20
+    top_k: 12
+    min_items: 4
+    min_score: 0.15
+    kb_enabled: false
+    kb_topic: computer_vision
+    kb_diff_alert: false
+    kb_backfill_last_n: 20
+    monitoring_enabled: false
+    monitoring:
+      cooldown_minutes: 360
+      hysteresis_runs: 2
+      triggers:
+        - id: usage_drop
+          type: metric_threshold
+          severity: high
+          metric: evidence_usage
+          op: lt
+          value: 0.6
+  - name: cv_background_matting_mobile
+    query: "What model families and deployment trade-offs are reported for background matting on mobile or real-time constraints?"
+    max_results: 20
+    top_k: 10
+    min_items: 3
+    min_score: 0.12
+  - name: cv_robustness_low_light_motion
+    query: "What failure modes under low light, motion blur, and occlusion are reported in mobile segmentation papers, and what mitigations are suggested?"
+    max_results: 20
+    top_k: 10
+    min_items: 3
+    min_score: 0.12

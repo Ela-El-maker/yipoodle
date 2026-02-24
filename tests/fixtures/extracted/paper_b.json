@@ -1,0 +1,34 @@
+{
+  "paper": {
+    "paper_id": "doi:10.1000/test",
+    "title": "Portrait Matting Distillation",
+    "authors": ["B Author"],
+    "year": 2023,
+    "venue": "CVPR",
+    "source": "openalex",
+    "abstract": "Distilled portrait matting",
+    "pdf_path": null,
+    "url": "https://example.org/paper.pdf",
+    "doi": "10.1000/test",
+    "arxiv_id": null,
+    "sync_timestamp": "2026-01-01T00:00:00Z"
+  },
+  "snippets": [
+    {
+      "snippet_id": "Pdoi_10_1000_test:S1",
+      "paper_id": "doi:10.1000/test",
+      "section": "method",
+      "text": "Our distillation method improves boundary detail while keeping runtime under 20 ms.",
+      "page_hint": 3,
+      "token_count": 13
+    },
+    {
+      "snippet_id": "Pdoi_10_1000_test:S2",
+      "paper_id": "doi:10.1000/test",
+      "section": "results",
+      "text": "Future work includes cross-domain adaptation for night images and transparent accessories.",
+      "page_hint": 4,
+      "token_count": 12
+    }
+  ]
+}

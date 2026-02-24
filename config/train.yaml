@@ -1,0 +1,14 @@
+batch_size: 16
+block_size: 128
+n_embd: 128
+n_head: 4
+n_layer: 4
+dropout: 0.1
+lr: 0.0003
+max_steps: 1000
+eval_every: 100
+eval_iters: 20
+gen_tokens: 256
+temperature: 0.9
+top_k: 40
+seed: 1337
