@@ -240,6 +240,57 @@ def save_vector_index(bundle: VectorIndexBundle, faiss_path: str, meta_path: str
     out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+def append_to_vector_index(
+    new_snippets: list[SnippetRecord],
+    faiss_path: str,
+    meta_path: str,
+    model_name: str = DEFAULT_EMBEDDING_MODEL,
+    batch_size: int = 64,
+) -> dict[str, object]:
+    """Append *new_snippets* to an existing **flat** (non-sharded) FAISS index.
+
+    Encodes only the new snippets, calls ``index.add()``, rewrites the index
+    and metadata files.  Returns a stats dict.
+
+    Raises ``RuntimeError`` if the existing index is sharded or non-flat.
+    """
+    faiss, _ = _import_vector_deps()
+    p_meta = Path(meta_path)
+    p_idx = Path(faiss_path)
+    if not p_meta.exists() or not p_idx.exists():
+        raise FileNotFoundError("Vector index artifacts missing — cannot append")
+
+    meta = json.loads(p_meta.read_text(encoding="utf-8"))
+    if int(meta.get("shard_count", 1) or 1) > 1:
+        raise RuntimeError("Cannot incrementally append to a sharded vector index")
+    if str(meta.get("index_type", "flat")) != "flat":
+        raise RuntimeError("Incremental vector append is only supported for flat indexes")
+
+    index = faiss.read_index(str(p_idx))
+    old_count = int(index.ntotal)
+    old_ids: list[str] = list(meta.get("snippet_ids", []))
+
+    texts = [s.text for s in new_snippets]
+    new_ids = [s.snippet_id for s in new_snippets]
+    embeddings = _encode_texts(model_name, texts, batch_size=batch_size)
+    index.add(embeddings.astype("float32"))
+
+    merged_ids = old_ids + new_ids
+    faiss.write_index(index, str(p_idx))
+
+    meta["snippet_ids"] = merged_ids
+    meta["snippet_count"] = len(merged_ids)
+    meta["index_mtime_ns"] = p_idx.stat().st_mtime_ns
+    p_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    return {
+        "vector_dim": int(meta.get("dimension", embeddings.shape[1])),
+        "vector_rows": len(merged_ids),
+        "vector_rows_added": len(new_ids),
+        "vector_rows_before": old_count,
+    }
+
+
 def load_vector_index(faiss_path: str, meta_path: str) -> LoadedVectorIndex:
     faiss, _ = _import_vector_deps()
     p_idx = Path(faiss_path)

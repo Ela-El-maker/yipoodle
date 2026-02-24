@@ -15,7 +15,7 @@ from src.apps.domain_scaffold import scaffold_domain_config
 from src.apps.extraction_eval import scaffold_extraction_gold, write_extraction_eval_report
 from src.apps.extraction_quality_report import write_extraction_quality_report
 from src.apps.evidence_extract import extract_from_papers_dir, extract_from_papers_dir_with_db
-from src.apps.index_builder import build_index
+from src.apps.index_builder import build_index, build_index_incremental
 from src.apps.benchmark import benchmark_research, benchmark_scale
 from src.apps.live_snapshot_store import load_cached_snapshot, save_snapshot, snapshot_to_snippets
 from src.apps.live_sources import fetch_live_source, live_snapshot_config, live_sources_config
@@ -37,6 +37,40 @@ from src.apps.paper_sync import sync_papers
 from src.apps.pipeline_runner import run_full_pipeline
 from src.apps.research_copilot import run_research
 from src.apps.release_notes import generate_release_notes
+from src.apps.structured_export import (
+    export_report,
+    export_report_to_file,
+    export_report_multi,
+    load_evidence_json,
+    load_report_json,
+    SUPPORTED_FORMATS,
+)
+from src.apps.session_store import (
+    DEFAULT_SESSION_DB,
+    create_session,
+    close_session,
+    reopen_session,
+    delete_session,
+    get_session_detail,
+    list_sessions,
+    record_query,
+    render_session_markdown,
+    session_summary,
+)
+from src.apps.source_reliability import (
+    DEFAULT_RELIABILITY_DB,
+    record_feedback,
+    recompute_reliability,
+    recompute_all,
+    get_reliability,
+    list_source_reliability,
+    get_feedback_events,
+    delete_source,
+    reliability_report,
+    render_reliability_markdown,
+    source_reliability_prior,
+    EVENT_TYPES,
+)
 from src.apps.sources_config import load_sources_config, ocr_config
 from src.apps.automation import dispatch_alerts, load_automation_config
 from src.apps.query_router import dispatch_query, load_router_config, route_query
@@ -74,7 +108,8 @@ def cmd_sync_papers(args: argparse.Namespace) -> None:
 
 
 def cmd_build_index(args: argparse.Namespace) -> None:
-    stats = build_index(
+    build_fn = build_index_incremental if getattr(args, "incremental", False) else build_index
+    stats = build_fn(
         args.corpus,
         args.out,
         db_path=args.db_path,
@@ -289,8 +324,53 @@ def cmd_research(args: argparse.Namespace) -> None:
         kb_db=args.kb_db,
         kb_top_k=args.kb_top_k,
         kb_merge_weight=args.kb_merge_weight,
+        aggregate=bool(args.aggregate),
+        aggregate_model=args.aggregate_model,
+        aggregate_similarity_threshold=args.aggregate_similarity_threshold,
+        aggregate_contradiction_threshold=args.aggregate_contradiction_threshold,
     )
     print(out)
+
+    # Optional session recording
+    session_id = getattr(args, "session_id", None)
+    if session_id is not None:
+        session_db = getattr(args, "session_db", DEFAULT_SESSION_DB)
+        report_json_path = Path(out).with_suffix(".json")
+        metrics_path = Path(out).with_suffix(".metrics.json")
+        key_claims: list[str] = []
+        gaps: list[str] = []
+        citations: list[str] = []
+        synthesis_preview = ""
+        evidence_count = 0
+        elapsed_ms: float | None = None
+        aggregation_enabled = bool(args.aggregate)
+        if report_json_path.exists():
+            rdata = json.loads(report_json_path.read_text(encoding="utf-8"))
+            key_claims = rdata.get("key_claims", [])
+            gaps = rdata.get("gaps", [])
+            citations = rdata.get("citations", [])
+            synthesis_preview = rdata.get("synthesis", "")[:500]
+        if metrics_path.exists():
+            mdata = json.loads(metrics_path.read_text(encoding="utf-8"))
+            elapsed_ms = mdata.get("elapsed_ms_total")
+        evidence_path = Path(out).with_suffix(".evidence.json")
+        if evidence_path.exists():
+            edata = json.loads(evidence_path.read_text(encoding="utf-8"))
+            evidence_count = len(edata.get("items", []))
+        record_query(
+            session_db,
+            int(session_id),
+            question=args.question,
+            report_path=out,
+            key_claims=key_claims,
+            gaps=gaps,
+            citations=citations,
+            synthesis_preview=synthesis_preview,
+            evidence_count=evidence_count,
+            elapsed_ms=elapsed_ms,
+            aggregation_enabled=aggregation_enabled,
+        )
+        print(f"Recorded in session {session_id}")
 
 
 def _parse_params(params: list[str] | None) -> dict[str, str]:
@@ -304,6 +384,198 @@ def _parse_params(params: list[str] | None) -> dict[str, str]:
             raise SystemExit(f"Invalid --params value '{raw}'. Expected key=value.")
         out[k] = v.strip()
     return out
+
+
+# ---------------------------------------------------------------------------
+# Source reliability commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_reliability_list(args: argparse.Namespace) -> None:
+    sources = list_source_reliability(args.reliability_db, sort_by=args.sort_by)
+    if args.format == "json":
+        print(json.dumps([{"source_name": s.source_name, "reliability_score": round(s.reliability_score, 4),
+                           "total_events": s.total_events, "fetch_ok": s.fetch_success_count,
+                           "fetch_err": s.fetch_error_count} for s in sources], indent=2))
+    else:
+        if not sources:
+            print("No sources tracked yet.")
+            return
+        print(f"{'Source':<25} {'Score':>7} {'Events':>7} {'Fetch OK':>9} {'Fetch Err':>10}")
+        print("-" * 62)
+        for s in sources:
+            print(f"{s.source_name:<25} {s.reliability_score:>7.4f} {s.total_events:>7} "
+                  f"{s.fetch_success_count:>9} {s.fetch_error_count:>10}")
+
+
+def cmd_reliability_show(args: argparse.Namespace) -> None:
+    from dataclasses import asdict
+    sr = get_reliability(args.reliability_db, args.source)
+    events = get_feedback_events(args.reliability_db, args.source, limit=args.events)
+    if args.format == "json":
+        print(json.dumps({
+            "source": asdict(sr),
+            "recent_events": [{
+                "event_id": e.event_id, "event_type": e.event_type,
+                "value": e.value, "run_id": e.run_id, "created_at": e.created_at,
+            } for e in events],
+        }, indent=2))
+    else:
+        print(f"Source: {sr.source_name}")
+        print(f"Reliability score: {sr.reliability_score:.4f}")
+        print(f"Total events: {sr.total_events}")
+        print(f"Fetch success/error: {sr.fetch_success_count}/{sr.fetch_error_count}")
+        aq = f"{sr.avg_extraction_quality:.3f}" if sr.avg_extraction_quality is not None else "N/A"
+        print(f"Avg extraction quality: {aq}")
+        print(f"Claims confirmed/disputed/stale: {sr.claims_confirmed}/{sr.claims_disputed}/{sr.claims_stale}")
+        print(f"User upvotes/downvotes: {sr.user_upvotes}/{sr.user_downvotes}")
+        if events:
+            print(f"\nRecent events (last {len(events)}):")
+            for e in events:
+                print(f"  [{e.created_at}] {e.event_type} = {e.value}")
+
+
+def cmd_reliability_record(args: argparse.Namespace) -> None:
+    eid = record_feedback(args.reliability_db, args.source, args.event, value=args.value, run_id=args.run_id)
+    print(json.dumps({"event_id": eid, "source": args.source, "event_type": args.event, "value": args.value}, indent=2))
+
+
+def cmd_reliability_recompute(args: argparse.Namespace) -> None:
+    if args.source:
+        score = recompute_reliability(args.reliability_db, args.source)
+        print(json.dumps({"source": args.source, "reliability_score": round(score, 4)}, indent=2))
+    else:
+        scores = recompute_all(args.reliability_db)
+        print(json.dumps({name: round(s, 4) for name, s in scores.items()}, indent=2))
+
+
+def cmd_reliability_report(args: argparse.Namespace) -> None:
+    from dataclasses import asdict
+    report = reliability_report(args.reliability_db)
+    if args.format == "json":
+        out = json.dumps(asdict(report), indent=2)
+    else:
+        out = render_reliability_markdown(report)
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(out, encoding="utf-8")
+        print(f"Report written to {args.out}")
+    else:
+        print(out)
+
+
+def cmd_reliability_delete(args: argparse.Namespace) -> None:
+    delete_source(args.reliability_db, args.source)
+    print(json.dumps({"deleted": True, "source": args.source}, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Session management commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_session_create(args: argparse.Namespace) -> None:
+    sid = create_session(args.session_db, args.name, description=args.description or "")
+    print(json.dumps({"session_id": sid, "name": args.name, "status": "open"}, indent=2))
+
+
+def cmd_session_list(args: argparse.Namespace) -> None:
+    status_filter = args.status if args.status != "all" else None
+    sessions = list_sessions(args.session_db, status=status_filter)
+    rows = [
+        {
+            "session_id": s.session_id,
+            "name": s.name,
+            "status": s.status,
+            "queries": s.query_count,
+            "created_at": s.created_at,
+        }
+        for s in sessions
+    ]
+    print(json.dumps(rows, indent=2))
+
+
+def cmd_session_show(args: argparse.Namespace) -> None:
+    detail = get_session_detail(args.session_db, args.session_id)
+    if args.format == "json":
+        payload = {
+            "session": {
+                "session_id": detail.info.session_id,
+                "name": detail.info.name,
+                "description": detail.info.description,
+                "status": detail.info.status,
+                "created_at": detail.info.created_at,
+                "closed_at": detail.info.closed_at,
+                "query_count": detail.info.query_count,
+            },
+            "queries": [
+                {
+                    "query_id": q.query_id,
+                    "question": q.question,
+                    "report_path": q.report_path,
+                    "created_at": q.created_at,
+                    "elapsed_ms": q.elapsed_ms,
+                    "key_claims": q.key_claims,
+                    "gaps": q.gaps,
+                    "citations": q.citations,
+                    "evidence_count": q.evidence_count,
+                    "aggregation_enabled": q.aggregation_enabled,
+                }
+                for q in detail.queries
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        print(render_session_markdown(detail))
+
+
+def cmd_session_summary(args: argparse.Namespace) -> None:
+    detail = get_session_detail(args.session_db, args.session_id)
+    summary = session_summary(args.session_db, args.session_id)
+    if args.format == "json":
+        payload = {
+            "session_id": summary.session_id,
+            "session_name": summary.session_name,
+            "query_count": summary.query_count,
+            "total_evidence_items": summary.total_evidence_items,
+            "unique_papers": summary.unique_papers,
+            "total_citations": summary.total_citations,
+            "unique_citations": summary.unique_citations,
+            "all_gaps": summary.all_gaps,
+            "recurring_gaps": summary.recurring_gaps,
+            "all_key_claims": summary.all_key_claims,
+            "question_timeline": summary.question_timeline,
+            "avg_elapsed_ms": summary.avg_elapsed_ms,
+            "aggregation_used_count": summary.aggregation_used_count,
+            "coverage": summary.coverage,
+        }
+        print(json.dumps(payload, indent=2))
+    else:
+        md = render_session_markdown(detail, summary=summary)
+        print(md)
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            render_session_markdown(detail, summary=summary),
+            encoding="utf-8",
+        )
+        print(f"\nSaved to {args.out}")
+
+
+def cmd_session_close(args: argparse.Namespace) -> None:
+    close_session(args.session_db, args.session_id)
+    print(json.dumps({"session_id": args.session_id, "status": "closed"}, indent=2))
+
+
+def cmd_session_reopen(args: argparse.Namespace) -> None:
+    reopen_session(args.session_db, args.session_id)
+    print(json.dumps({"session_id": args.session_id, "status": "open"}, indent=2))
+
+
+def cmd_session_delete(args: argparse.Namespace) -> None:
+    delete_session(args.session_db, args.session_id)
+    print(json.dumps({"session_id": args.session_id, "deleted": True}, indent=2))
 
 
 def cmd_live_fetch(args: argparse.Namespace) -> None:
@@ -746,6 +1018,31 @@ def cmd_validate_report(args: argparse.Namespace) -> None:
         print(json.dumps(metrics, indent=2))
 
 
+def cmd_export_report(args: argparse.Namespace) -> None:
+    report = load_report_json(args.input)
+    evidence = load_evidence_json(args.evidence) if args.evidence else None
+    db_path = args.papers_db if args.papers_db else None
+    formats = [f.strip() for f in args.format.split(",")]
+    if len(formats) == 1:
+        fmt = formats[0]
+        if args.out:
+            path = export_report_to_file(
+                report, args.out, evidence, fmt=fmt, papers_db_path=db_path,
+            )
+            print(f"Wrote {fmt} export to {path}")
+        else:
+            print(export_report(report, evidence, fmt=fmt, papers_db_path=db_path))
+    else:
+        out_dir = args.out or "runs/research_reports"
+        basename = Path(args.input).stem
+        results = export_report_multi(
+            report, out_dir, basename=basename, evidence=evidence,
+            formats=formats, papers_db_path=db_path,
+        )
+        for fmt, path in results.items():
+            print(f"Wrote {fmt} export to {path}")
+
+
 def cmd_scaffold_domain_config(args: argparse.Namespace) -> None:
     out = scaffold_domain_config(
         domain=args.domain,
@@ -1087,6 +1384,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("build-index", help="build-index --corpus data/extracted")
     p.add_argument("--corpus", default="data/extracted")
     p.add_argument("--out", default="data/indexes/bm25_index.json")
+    p.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Incrementally update the existing index (append new snippets, skip unchanged corpus)",
+    )
     p.add_argument("--db-path", default=None, help="Optional SQLite DB path to enrich snippet metadata")
     p.add_argument("--with-vector", action="store_true")
     p.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
@@ -1193,6 +1495,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--cache-dir", default="runs/cache/research")
     p.add_argument("--out", default="runs/research_reports/report.md")
+    p.add_argument("--aggregate", action=argparse.BooleanOptionalAction, default=False,
+                   help="Enable cross-document evidence aggregation (clusters + consensus/conflict)")
+    p.add_argument("--aggregate-model", default="sentence-transformers/all-MiniLM-L6-v2",
+                   help="Embedding model for evidence clustering")
+    p.add_argument("--aggregate-similarity-threshold", type=float, default=0.55,
+                   help="Cosine similarity threshold for clustering (0-1)")
+    p.add_argument("--aggregate-contradiction-threshold", type=float, default=0.40,
+                   help="Contradiction score threshold for conflict labelling (0-1)")
+    p.add_argument("--session-id", type=int, default=None,
+                   help="Record this research query in the given session")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB,
+                   help="Path to session tracking database")
     p.set_defaults(func=cmd_research)
 
     p = sub.add_parser("ask", help="quick deterministic answer mode")
@@ -1556,6 +1870,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--online-semantic-api-key", default=None)
     p.set_defaults(func=cmd_validate_report)
 
+    p = sub.add_parser("export-report", help="export a research report to BibTeX / LaTeX / Markdown")
+    p.add_argument("--input", required=True, help="Path to report .json file")
+    p.add_argument("--evidence", default=None, help="Path to .evidence.json file (optional, enriches output)")
+    p.add_argument("--format", default="bibtex", help="Export format(s): bibtex, latex, markdown (comma-separated for multi)")
+    p.add_argument("--papers-db", default=None, help="Path to papers SQLite DB for full metadata resolution")
+    p.add_argument("--out", default=None, help="Output file path (or directory for multi-format)")
+    p.set_defaults(func=cmd_export_report)
+
     p = sub.add_parser("scaffold-domain-config", help="create a new domain sources config template")
     p.add_argument("--domain", required=True, help='Domain name, e.g., "marketing growth"')
     p.add_argument("--out", default=None, help="Optional explicit output file path")
@@ -1602,6 +1924,85 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--audit-dir", default="runs/audit")
     p.add_argument("--out", default="runs/audit/monitor_history_check.json")
     p.set_defaults(func=cmd_monitor_history_check)
+
+    # -- Session tracking subcommands --
+    p = sub.add_parser("session-create", help="create a new research session")
+    p.add_argument("--name", required=True, help="Unique session name")
+    p.add_argument("--description", default="", help="Optional session description")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_create)
+
+    p = sub.add_parser("session-list", help="list research sessions")
+    p.add_argument("--status", choices=["open", "closed", "all"], default="all")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_list)
+
+    p = sub.add_parser("session-show", help="show session details")
+    p.add_argument("--session-id", type=int, required=True)
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_show)
+
+    p = sub.add_parser("session-summary", help="generate cross-query session summary")
+    p.add_argument("--session-id", type=int, required=True)
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.add_argument("--out", default=None, help="Optional path to write summary Markdown")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_summary)
+
+    p = sub.add_parser("session-close", help="close a research session")
+    p.add_argument("--session-id", type=int, required=True)
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_close)
+
+    p = sub.add_parser("session-reopen", help="reopen a closed research session")
+    p.add_argument("--session-id", type=int, required=True)
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_reopen)
+
+    p = sub.add_parser("session-delete", help="delete a session and all its queries")
+    p.add_argument("--session-id", type=int, required=True)
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.set_defaults(func=cmd_session_delete)
+
+    # --- source reliability commands ---
+    p = sub.add_parser("reliability-list", help="list all sources with reliability scores")
+    p.add_argument("--sort-by", default="reliability_score",
+                   choices=["reliability_score", "source_name", "total_events", "created_at"])
+    p.add_argument("--format", choices=["table", "json"], default="table")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_list)
+
+    p = sub.add_parser("reliability-show", help="show detailed reliability for one source")
+    p.add_argument("--source", required=True, help="Source connector name (e.g. arxiv)")
+    p.add_argument("--events", type=int, default=20, help="Number of recent events to show")
+    p.add_argument("--format", choices=["text", "json"], default="text")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_show)
+
+    p = sub.add_parser("reliability-record", help="record a feedback event for a source")
+    p.add_argument("--source", required=True, help="Source connector name")
+    p.add_argument("--event", required=True, choices=sorted(EVENT_TYPES), help="Event type")
+    p.add_argument("--value", type=float, default=1.0, help="Event value (default 1.0)")
+    p.add_argument("--run-id", default=None, help="Optional run identifier")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_record)
+
+    p = sub.add_parser("reliability-recompute", help="recompute reliability scores from events")
+    p.add_argument("--source", default=None, help="Recompute one source (default: all)")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_recompute)
+
+    p = sub.add_parser("reliability-report", help="generate full source reliability report")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.add_argument("--out", default=None, help="Optional output file path")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_report)
+
+    p = sub.add_parser("reliability-delete", help="delete a source and all its events")
+    p.add_argument("--source", required=True, help="Source connector name to delete")
+    p.add_argument("--reliability-db", default=DEFAULT_RELIABILITY_DB)
+    p.set_defaults(func=cmd_reliability_delete)
 
     return parser
 
