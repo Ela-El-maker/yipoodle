@@ -34,6 +34,12 @@ from src.apps.retrieval import (
 )
 from src.apps.vector_index import DEFAULT_EMBEDDING_MODEL, load_vector_index, query_vector_index
 from src.apps.sources_config import load_sources_config, max_tokens_per_summary, metadata_prior_weight
+from src.apps.evidence_aggregation import (
+    AggregationResult,
+    aggregate_evidence,
+    render_aggregation_markdown,
+    synthesize_from_clusters,
+)
 from src.core.schemas import EvidenceItem, EvidencePack, ExperimentProposal, ResearchReport, ShortlistItem
 from src.core.validation import (
     report_coverage_metrics,
@@ -261,7 +267,13 @@ def _build_insufficient_evidence_report(question: str, evidence: EvidencePack) -
     )
 
 
-def build_research_report(question: str, evidence: EvidencePack, min_items: int = 2, min_score: float = 0.5) -> ResearchReport:
+def build_research_report(
+    question: str,
+    evidence: EvidencePack,
+    min_items: int = 2,
+    min_score: float = 0.5,
+    aggregation: AggregationResult | None = None,
+) -> ResearchReport:
     if len(evidence.items) < min_items or (evidence.items and evidence.items[0].score < min_score):
         report = _build_insufficient_evidence_report(question, evidence)
     else:
@@ -274,12 +286,20 @@ def build_research_report(question: str, evidence: EvidencePack, min_items: int 
             experiments=[],
             citations=[],
         )
-        synthesis, gaps, experiments, citations = _synthesize(evidence)
-        report.synthesis = synthesis
-        report.key_claims = _derive_key_claims(synthesis)
-        report.gaps = gaps
-        report.experiments = experiments
-        report.citations = citations
+        if aggregation is not None and not aggregation.is_empty:
+            agg_out = synthesize_from_clusters(aggregation, question)
+            report.synthesis = agg_out["synthesis"]
+            report.key_claims = _derive_key_claims(agg_out["synthesis"])
+            report.gaps = agg_out["gaps"]
+            report.experiments = agg_out["experiments"]
+            report.citations = agg_out["citations"]
+        else:
+            synthesis, gaps, experiments, citations = _synthesize(evidence)
+            report.synthesis = synthesis
+            report.key_claims = _derive_key_claims(synthesis)
+            report.gaps = gaps
+            report.experiments = experiments
+            report.citations = citations
 
     errors = validate_report_citations(report)
     report_text = report.synthesis + "\n" + "\n".join(report.gaps + [e.proposal for e in report.experiments])
@@ -290,7 +310,11 @@ def build_research_report(question: str, evidence: EvidencePack, min_items: int 
     return report
 
 
-def render_report_markdown(report: ResearchReport, metrics: dict[str, float | int] | None = None) -> str:
+def render_report_markdown(
+    report: ResearchReport,
+    metrics: dict[str, float | int] | None = None,
+    aggregation: AggregationResult | None = None,
+) -> str:
     out = [f"# Research Report\n", f"## Question\n{report.question}\n"]
     out.append("## Paper Shortlist")
     for item in report.shortlist:
@@ -317,6 +341,9 @@ def render_report_markdown(report: ResearchReport, metrics: dict[str, float | in
     out.append("\n## Citations")
     for c in sorted(set(report.citations)):
         out.append(f"- {c}")
+
+    if aggregation is not None and not aggregation.is_empty:
+        out.append("\n" + render_aggregation_markdown(aggregation))
 
     if report.retrieval_diagnostics:
         out.append("\n## Retrieval Diagnostics")
@@ -529,14 +556,44 @@ def _query_vector_via_service(
     return out
 
 
-def _write_outputs(out_path: str, report: ResearchReport, evidence: EvidencePack, metrics: dict[str, float | int]) -> str:
-    md = render_report_markdown(report, metrics=metrics)
+def _write_outputs(
+    out_path: str,
+    report: ResearchReport,
+    evidence: EvidencePack,
+    metrics: dict[str, float | int],
+    aggregation: AggregationResult | None = None,
+) -> str:
+    md = render_report_markdown(report, metrics=metrics, aggregation=aggregation)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")
     out.with_suffix(".evidence.json").write_text(json.dumps(evidence.model_dump(), indent=2), encoding="utf-8")
     out.with_suffix(".json").write_text(json.dumps(report.model_dump(), indent=2), encoding="utf-8")
     out.with_suffix(".metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    if aggregation is not None and not aggregation.is_empty:
+        agg_data = {
+            "total_items": aggregation.total_items,
+            "cross_document_clusters": aggregation.cross_document_clusters,
+            "consensus_clusters": aggregation.consensus_clusters,
+            "conflict_clusters": aggregation.conflict_clusters,
+            "mixed_clusters": aggregation.mixed_clusters,
+            "clusters": [
+                {
+                    "cluster_id": c.cluster_id,
+                    "label": c.label,
+                    "consensus_score": c.consensus_score,
+                    "size": c.size,
+                    "cross_document": c.cross_document,
+                    "paper_ids": sorted(set(c.paper_ids)),
+                    "snippet_ids": [it.snippet_id for it in c.items],
+                    "representative_text": c.representative_text[:200],
+                }
+                for c in aggregation.clusters
+            ],
+        }
+        out.with_suffix(".aggregation.json").write_text(
+            json.dumps(agg_data, indent=2), encoding="utf-8",
+        )
     return str(out)
 
 
@@ -754,6 +811,10 @@ def run_research(
     kb_db: str = "data/kb/knowledge.db",
     kb_top_k: int = 5,
     kb_merge_weight: float = 0.15,
+    aggregate: bool = False,
+    aggregate_model: str = DEFAULT_EMBEDDING_MODEL,
+    aggregate_similarity_threshold: float = 0.55,
+    aggregate_contradiction_threshold: float = 0.40,
 ) -> str:
     if retrieval_mode not in {"lexical", "vector", "hybrid"}:
         raise ValueError("retrieval_mode must be one of: lexical, vector, hybrid")
@@ -866,7 +927,7 @@ def run_research(
             "question_relevance_gate_passed": True,
             "elapsed_ms_total": round((time.perf_counter() - t0) * 1000.0, 3),
         }
-        return _write_outputs(out_path, report, evidence, metrics)
+        return _write_outputs(out_path, report, evidence, metrics, aggregation=None)
     cache_path = Path(cache_dir) / f"{key}.json"
     if use_cache and (not live_enabled) and cache_path.exists():
         payload = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -880,7 +941,7 @@ def run_research(
         metrics["elapsed_ms_query"] = 0.0
         metrics["elapsed_ms_report"] = 0.0
         metrics["elapsed_ms_total"] = round((time.perf_counter() - t0) * 1000.0, 3)
-        return _write_outputs(out_path, report, evidence, metrics)
+        return _write_outputs(out_path, report, evidence, metrics, aggregation=None)
 
     t_index = time.perf_counter()
     index = load_index(index_path)
@@ -1160,7 +1221,18 @@ def run_research(
         )
 
     t_report = time.perf_counter()
-    report = build_research_report(question, evidence, min_items=min_items, min_score=min_score)
+    agg_result: AggregationResult | None = None
+    if aggregate and evidence.items:
+        agg_result = aggregate_evidence(
+            evidence,
+            model_name=aggregate_model,
+            similarity_threshold=aggregate_similarity_threshold,
+            contradiction_threshold=aggregate_contradiction_threshold,
+        )
+    report = build_research_report(
+        question, evidence, min_items=min_items, min_score=min_score,
+        aggregation=agg_result,
+    )
     if diagnostics and diagnostics_payload:
         report.retrieval_diagnostics = diagnostics_payload
     elif diagnostics:
@@ -1250,9 +1322,18 @@ def run_research(
     metrics["elapsed_ms_query"] = round((t_report - t_query) * 1000.0, 3)
     metrics["elapsed_ms_report"] = round((time.perf_counter() - t_report) * 1000.0, 3)
     metrics["elapsed_ms_total"] = round((time.perf_counter() - t0) * 1000.0, 3)
+    if agg_result is not None and not agg_result.is_empty:
+        metrics["aggregate_enabled"] = True
+        metrics["aggregate_clusters"] = len(agg_result.clusters)
+        metrics["aggregate_cross_document"] = agg_result.cross_document_clusters
+        metrics["aggregate_consensus"] = agg_result.consensus_clusters
+        metrics["aggregate_conflict"] = agg_result.conflict_clusters
+        metrics["aggregate_mixed"] = agg_result.mixed_clusters
+    else:
+        metrics["aggregate_enabled"] = bool(aggregate)
     metrics.update({f"index_cache_{k}": v for k, v in index_cache_info().items()})
 
-    out = _write_outputs(out_path, report, evidence, metrics)
+    out = _write_outputs(out_path, report, evidence, metrics, aggregation=agg_result)
 
     if use_cache and (not live_enabled):
         cache_path.parent.mkdir(parents=True, exist_ok=True)

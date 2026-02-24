@@ -4,11 +4,17 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import re
+from typing import Any
 
 from src.core.schemas import EvidenceItem, EvidencePack, SnippetRecord
+
+
+INDEX_MANIFEST_VERSION = 2
 
 TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 
@@ -81,6 +87,7 @@ class SimpleBM25Index:
         use_metadata_priors: bool = True,
         metadata_prior_weight: float = 0.2,
         quality_prior_weight: float = 0.15,
+        source_trust_map: dict[str, float] | None = None,
     ) -> EvidencePack:
         ranked = self.query_scored(
             question=question,
@@ -94,6 +101,7 @@ class SimpleBM25Index:
             use_metadata_priors=use_metadata_priors,
             metadata_prior_weight=metadata_prior_weight,
             quality_prior_weight=quality_prior_weight,
+            source_trust_map=source_trust_map,
         )
         return evidence_from_ranked(question, ranked, top_k=top_k, max_per_paper=max_per_paper)
 
@@ -110,6 +118,7 @@ class SimpleBM25Index:
         use_metadata_priors: bool = True,
         metadata_prior_weight: float = 0.2,
         quality_prior_weight: float = 0.15,
+        source_trust_map: dict[str, float] | None = None,
     ) -> list[tuple[SnippetRecord, float]]:
         q_toks = query_terms if query_terms is not None else tokenize(question)
         term_boosts = term_boosts or {}
@@ -133,6 +142,10 @@ class SimpleBM25Index:
                 score *= 1.0 + metadata_prior_weight * (prior - 1.0)
             if score > 0:
                 score *= _quality_prior(sn, quality_prior_weight=quality_prior_weight)
+            if score > 0 and source_trust_map:
+                venue = (sn.paper_venue or "").strip().lower()
+                if venue in source_trust_map:
+                    score *= source_trust_map[venue]
             if score > 0:
                 scores.append((i, score))
         scores.sort(key=lambda x: x[1], reverse=True)
@@ -150,10 +163,36 @@ class SimpleBM25Index:
         return ranked
 
 
-def save_index(index: SimpleBM25Index, path: str) -> None:
+def snippet_content_hash(snippet: SnippetRecord) -> str:
+    """Stable SHA-256 hex digest of the content-significant fields of a snippet."""
+    blob = f"{snippet.snippet_id}|{snippet.paper_id}|{snippet.section}|{snippet.text}"
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _build_manifest(snippets: list[SnippetRecord]) -> dict[str, Any]:
+    return {
+        "version": INDEX_MANIFEST_VERSION,
+        "snippet_count": len(snippets),
+        "snippet_hashes": {s.snippet_id: snippet_content_hash(s) for s in snippets},
+        "built_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def load_index_manifest(path: str) -> dict[str, Any] | None:
+    """Load just the manifest from an existing index file.  Returns *None* if
+    the file does not exist or has no manifest (legacy format)."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    return payload.get("manifest")  # type: ignore[return-value]
+
+
+def save_index(index: SimpleBM25Index, path: str, *, manifest: dict[str, Any] | None = None) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, Any] = {
         "snippets": [s.model_dump() for s in index.snippets],
+        "manifest": manifest if manifest is not None else _build_manifest(index.snippets),
     }
     Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
