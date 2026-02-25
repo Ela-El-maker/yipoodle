@@ -1,10 +1,9 @@
 from pathlib import Path
-import json
 
 from src.apps.doc_writer import write_doc
 from src.apps.evidence_extract import extract_snippets
 from src.apps.index_builder import build_index
-from src.apps.paper_ingest import dedupe_key_for_paper, init_db, upsert_papers
+from src.apps.paper_ingest import dedupe_key_for_paper
 from src.apps.research_copilot import build_research_report, run_research
 from src.apps.release_notes import _bucket
 from src.apps.retrieval import load_index

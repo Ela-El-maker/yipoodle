@@ -17,22 +17,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import textwrap
 from pathlib import Path
 
 import pytest
 
 from src.apps.structured_export import (
-    ExportFormat,
     PaperMeta,
-    SUPPORTED_FORMATS,
     _bibtex_key,
     _extract_paper_id_from_citation,
     _latex_escape,
     _load_papers_from_db,
-    _render_bibtex,
-    _render_latex,
-    _render_markdown_bib,
     _resolve_paper_ids,
     export_report,
     export_report_multi,

@@ -8,14 +8,14 @@ Yipoodle provides ~40 CLI subcommands accessed via `python -m src.cli <command>`
 
 | Category                | Commands                                                                                                                                                               |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Research Pipeline**   | `sync-papers`, `build-index`, `research`, `run-pipeline`, `validate-report`, `benchmark-research`, `benchmark-scale`                                                   |
+| **Research Pipeline**   | `sync-papers`, `build-index`, `research`, `run-pipeline`, `validate-report`, `benchmark-research`, `benchmark-scale`, `benchmark-regression-check`                       |
 | **Tiny GPT**            | `train-tinygpt`, `generate`                                                                                                                                            |
 | **Query Router**        | `ask`, `query`, `notes`, `query-router-eval`, `live-fetch`                                                                                                             |
 | **Knowledge Base**      | `kb-ingest`, `kb-query`, `kb-diff`, `kb-backfill`                                                                                                                      |
-| **Monitoring**          | `monitor`, `monitor-unregister`, `monitor-evaluate`, `monitor-digest-flush`, `monitor-status`, `monitor-soak-sim`, `monitor-history-check`                             |
+| **Monitoring**          | `monitor`, `monitor-unregister`, `monitor-evaluate`, `monitor-digest-flush`, `monitor-status`, `monitor-soak-sim`, `monitor-history-check`, `reliability-watchdog`     |
 | **Vector Service**      | `vector-service-build`, `vector-service-query`, `vector-service-health`, `vector-service-serve`                                                                        |
 | **Corpus & Extraction** | `extract-corpus`, `corpus-health`, `extraction-quality-report`, `extraction-eval`, `extraction-eval-scaffold-gold`, `layout-promotion-gate`, `migrate-extraction-meta` |
-| **Utility**             | `snapshot-run`, `doc-write`, `release-notes`, `scaffold-domain-config`                                                                                                 |
+| **Utility**             | `snapshot-run`, `doc-write`, `release-notes`, `scaffold-domain-config`, `research-template`, `watch-ingest`                                                           |
 
 ---
 
@@ -142,6 +142,18 @@ Benchmark retrieval on synthetically enlarged corpus.
 ```bash
 python -m src.cli benchmark-scale --corpus data/extracted \
   --queries-file tests/fixtures/queries.txt --repeat-factor 50
+```
+
+### `benchmark-regression-check`
+
+Compare the latest benchmark output with historical baseline and emit a regression verdict.
+
+```bash
+python -m src.cli benchmark-regression-check \
+  --benchmark runs/research_reports/automation/<run_id>/benchmark.json \
+  --history runs/audit/benchmark_history.json \
+  --max-latency-regression-pct 10 \
+  --min-quality-floor 0.5
 ```
 
 ---
@@ -285,6 +297,19 @@ python -m src.cli kb-backfill --kb-db data/kb/knowledge.db \
   --reports-dir runs/research_reports --topic finance_markets --last-n 20
 ```
 
+### `kb-contradiction-resolve`
+
+Run targeted follow-up research to resolve disputed contradiction pairs and update claim status (`active`/`superseded`) when support margin is clear.
+
+```bash
+python -m src.cli kb-contradiction-resolve \
+  --kb-db data/kb/knowledge.db \
+  --topic finance_markets \
+  --index data/indexes/bm25_index.json \
+  --out-dir runs/audit/kb_resolution/finance_markets \
+  --max-pairs 5 --support-margin 0.05
+```
+
 ---
 
 ## Monitoring
@@ -312,6 +337,16 @@ Show monitoring state, digest queue, and schedule registry.
 
 ```bash
 python -m src.cli monitor-status --config config/automation.yaml
+```
+
+### `reliability-watchdog`
+
+Ingest sync stats into source reliability scoring and emit degraded-source events.
+
+```bash
+python -m src.cli reliability-watchdog \
+  --run-dir runs/audit/runs/<run_id> \
+  --config config/automation.yaml
 ```
 
 ### `monitor-soak-sim`

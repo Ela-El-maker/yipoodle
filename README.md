@@ -34,6 +34,7 @@ Yipoodle solves all three by building a fully deterministic pipeline: every synt
 | **Live Sources**       | REST/RSS/scrape connectors for real-time data with snapshot caching and intent-routed source packs                                                      |
 | **Monitoring**         | Recurring topic watches with cron scheduling, threshold-based alerting (webhook + Gmail SMTP), cooldown/hysteresis noise control                        |
 | **Automation**         | Full cron-driven pipeline: sync → extract → health gate → index → research → validate → KB ingest → alert dispatch                                      |
+| **Automation Workflows** | CI pipeline, benchmark regression gate/history, source reliability watchdog, research templates, file-watch ingestion                                  |
 | **Query Router**       | Smart routing of prompts to ask/research/monitor/notes modes with deterministic intent detection                                                        |
 | **Tiny GPT**           | From-scratch character-level transformer (multi-head attention, pre-norm blocks, top-k sampling) for local text generation                              |
 | **Reproducibility**    | Snapshot bundles, run manifests, audit trails, extraction quality reports, benchmark harnesses                                                          |
@@ -145,6 +146,37 @@ pip install --extra-index-url https://download.pytorch.org/whl/cu121 -r deploy/r
 
 ---
 
+## Deployment & DevOps Workflows
+
+### CI/CD and Version-Control Triggers
+
+- Pull requests automatically run lint + tests + quality gates (`query-router-eval`, `extraction-eval`).
+- Pushes to `main`/tags run the same gates and then publish a CPU container image to GHCR.
+- Workflow file: `.github/workflows/ci.yml`.
+
+### Automated Environment Setup
+
+```bash
+# Bootstrap local environment (venv + deps + standard data/run directories)
+bash scripts/bootstrap_env.sh --profile cpu
+
+# Optional profiles
+bash scripts/bootstrap_env.sh --profile dev
+bash scripts/bootstrap_env.sh --profile cuda12
+```
+
+### Container Provisioning
+
+```bash
+# Build and run CPU compose stack
+make docker-compose-cpu-up
+
+# Stop stack
+make docker-compose-cpu-down
+```
+
+---
+
 ## Environment Variables
 
 | Variable             | Required | Description                                           |
@@ -237,6 +269,53 @@ make report QUERY="mobile segmentation limitations"
 
 # Run all tests
 make test
+```
+
+### 7. Automation Workflow Commands
+
+```bash
+# Run template-driven multi-query session
+python -m src.cli research-template \
+  --template lit_review \
+  --topic "mobile segmentation" \
+  --index data/indexes/bm25_index.json
+
+# Reliability watchdog from latest automation run
+python -m src.cli reliability-watchdog \
+  --run-dir runs/audit/runs/<run_id> \
+  --config config/automation.yaml
+
+# Resolve disputed KB contradictions with targeted follow-up research
+python -m src.cli kb-contradiction-resolve \
+  --kb-db data/kb/knowledge.db \
+  --topic finance_markets \
+  --index data/indexes/bm25_index.json \
+  --out-dir runs/audit/kb_resolution/finance_markets
+
+# Benchmark regression gate against historical baseline
+python -m src.cli benchmark-regression-check \
+  --benchmark runs/research_reports/automation/<run_id>/benchmark.json \
+  --history runs/audit/benchmark_history.json \
+  --max-latency-regression-pct 10 \
+  --min-quality-floor 0.5
+
+# Optional automation cadence control:
+# config/automation.yaml -> benchmark_regression.run_every_n_runs: 5
+
+# One-shot watch ingestion for dropped PDFs
+python -m src.cli watch-ingest \
+  --dir data/papers \
+  --once \
+  --db-path data/papers.db \
+  --extracted-dir data/extracted \
+  --index data/indexes/bm25_index.json
+```
+
+Scheduled digest flush:
+
+```bash
+# Daily at 08:00 UTC
+0 8 * * * cd /path/to/yipoodle && .venv/bin/python -m src.cli monitor-digest-flush --config config/automation.yaml
 ```
 
 ---

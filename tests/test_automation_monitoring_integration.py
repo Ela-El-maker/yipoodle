@@ -119,6 +119,7 @@ def test_monitor_digest_flush_and_status(tmp_path) -> None:
         st = monitor_status(config=cfg)
     finally:
         os.chdir(old_cwd)
+    assert st["digest_queue_path"] == str(queue_path)
     assert st["digest_queue_count"] == 2
     assert st["schedule_registry_count"] == 2
     assert st["schedule_registry_by_backend"]["file"] == 1

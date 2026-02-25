@@ -8,12 +8,16 @@ import sqlite3
 import subprocess
 import sys
 import smtplib
+import time
 from email.message import EmailMessage
 from typing import Any
 
 import yaml
 import requests
 from src.apps.monitoring_engine import evaluate_topic_monitoring
+from src.apps.benchmark_regression import run_benchmark_regression_check
+from src.apps.reliability_watchdog import run_reliability_watchdog
+from src.apps.source_reliability import DEFAULT_RELIABILITY_DB
 
 
 def _utc_ts() -> str:
@@ -70,6 +74,22 @@ def load_automation_config(path: str) -> dict[str, Any]:
             "alpha": 0.6,
             "max_per_paper": 2,
             "quality_prior_weight": 0.15,
+            "retry": {
+                "max_attempts": 1,
+                "base_delay_sec": 1.0,
+                "max_delay_sec": 8.0,
+                "retry_stages": [
+                    "sync-papers",
+                    "extract-corpus",
+                    "corpus-health",
+                    "build-index",
+                    "research",
+                    "validate-report",
+                "benchmark-research",
+                "snapshot-run",
+                "kb-contradiction-resolve",
+            ],
+        },
         },
         "paths": {
             "db_path": "data/automation/papers.db",
@@ -131,6 +151,30 @@ def load_automation_config(path: str) -> dict[str, Any]:
         "kb": {
             "enabled_default": False,
             "db_path": "data/kb/knowledge.db",
+            "contradiction_resolver_enabled_default": False,
+            "contradiction_resolver_max_pairs": 5,
+            "contradiction_resolver_support_margin": 0.05,
+        },
+        "reliability": {
+            "enabled": False,
+            "db_path": DEFAULT_RELIABILITY_DB,
+            "state_path": "runs/audit/source_reliability_state.json",
+            "report_path": "runs/audit/source_reliability.json",
+            "degrade_threshold": 0.30,
+            "critical_threshold": 0.15,
+            "auto_disable_after": 0,
+            "source_mapping": {
+                "from_semanticscholar": "semanticscholar",
+                "from_ieee_xplore": "ieee_xplore",
+            },
+        },
+        "benchmark_regression": {
+            "enabled": False,
+            "history_path": "runs/audit/benchmark_history.json",
+            "max_latency_regression_pct": 10.0,
+            "min_quality_floor": 0.0,
+            "history_window": 104,
+            "run_every_n_runs": 1,
         },
         "monitoring": {
             "enabled_default": False,
@@ -160,17 +204,92 @@ def load_automation_config(path: str) -> dict[str, Any]:
     return cfg
 
 
-def _run_json_command(args: list[str], log_path: Path) -> dict[str, Any]:
-    proc = subprocess.run(args, capture_output=True, text=True)
-    stdout = proc.stdout.strip()
-    stderr = proc.stderr.strip()
+def _benchmark_history_count(path: str) -> int:
+    p = Path(path)
+    if not p.exists():
+        return 0
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    return len(payload) if isinstance(payload, list) else 0
+
+
+def _benchmark_due_for_run(*, history_path: str, run_every_n_runs: int) -> tuple[bool, int, int]:
+    count = _benchmark_history_count(history_path)
+    n = max(1, int(run_every_n_runs or 1))
+    current_ordinal = count + 1
+    if current_ordinal == 1:
+        return True, count, current_ordinal
+    if n <= 1:
+        return True, count, current_ordinal
+    return (current_ordinal % n) == 0, count, current_ordinal
+
+
+def _run_command_with_retry(
+    args: list[str],
+    log_path: Path,
+    *,
+    stage: str,
+    retry_cfg: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    rcfg = retry_cfg or {}
+    max_attempts = max(1, int(rcfg.get("max_attempts", 1) or 1))
+    base_delay = max(0.1, float(rcfg.get("base_delay_sec", 1.0) or 1.0))
+    max_delay = max(base_delay, float(rcfg.get("max_delay_sec", 8.0) or 8.0))
+    retry_stages = set(str(x) for x in (rcfg.get("retry_stages", []) or []))
+    retries_allowed = max_attempts > 1 and (not retry_stages or stage in retry_stages)
+    attempts_limit = max_attempts if retries_allowed else 1
+    attempts: list[dict[str, Any]] = []
+
+    for attempt in range(1, attempts_limit + 1):
+        proc = subprocess.run(args, capture_output=True, text=True)
+        stdout = proc.stdout.strip()
+        stderr = proc.stderr.strip()
+        attempts.append(
+            {
+                "attempt": attempt,
+                "returncode": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
+        )
+        if proc.returncode == 0:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(
+                json.dumps({"stage": stage, "cmd": args, "attempts": attempts, "returncode": 0}, indent=2),
+                encoding="utf-8",
+            )
+            return stdout, stderr
+        if attempt < attempts_limit:
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+            time.sleep(delay)
+
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(
-        json.dumps({"cmd": args, "returncode": proc.returncode, "stdout": stdout, "stderr": stderr}, indent=2),
+        json.dumps(
+            {
+                "stage": stage,
+                "cmd": args,
+                "attempts": attempts,
+                "returncode": attempts[-1]["returncode"] if attempts else 1,
+            },
+            indent=2,
+        ),
         encoding="utf-8",
     )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(args)}\n{stderr or stdout}")
+    final = attempts[-1] if attempts else {"stderr": "", "stdout": ""}
+    raise RuntimeError(f"Command failed ({stage}): {' '.join(args)}\n{final.get('stderr') or final.get('stdout')}")
+
+
+def _run_json_command(
+    args: list[str],
+    log_path: Path,
+    *,
+    stage: str,
+    retry_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stdout, _ = _run_command_with_retry(args, log_path, stage=stage, retry_cfg=retry_cfg)
     if not stdout:
         return {}
     try:
@@ -179,17 +298,14 @@ def _run_json_command(args: list[str], log_path: Path) -> dict[str, Any]:
         return {"stdout": stdout}
 
 
-def _run_path_command(args: list[str], log_path: Path) -> str:
-    proc = subprocess.run(args, capture_output=True, text=True)
-    stdout = proc.stdout.strip()
-    stderr = proc.stderr.strip()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(
-        json.dumps({"cmd": args, "returncode": proc.returncode, "stdout": stdout, "stderr": stderr}, indent=2),
-        encoding="utf-8",
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(args)}\n{stderr or stdout}")
+def _run_path_command(
+    args: list[str],
+    log_path: Path,
+    *,
+    stage: str,
+    retry_cfg: dict[str, Any] | None = None,
+) -> str:
+    stdout, _ = _run_command_with_retry(args, log_path, stage=stage, retry_cfg=retry_cfg)
     return stdout.splitlines()[-1] if stdout else ""
 
 
@@ -247,6 +363,12 @@ def parse_run_summary(run_dir: Path) -> dict[str, Any]:
     benchmark = {}
     if manifest.get("benchmark_file") and Path(manifest["benchmark_file"]).exists():
         benchmark = json.loads(Path(manifest["benchmark_file"]).read_text(encoding="utf-8"))
+    benchmark_regression = {}
+    if manifest.get("benchmark_regression_file") and Path(manifest["benchmark_regression_file"]).exists():
+        benchmark_regression = json.loads(Path(manifest["benchmark_regression_file"]).read_text(encoding="utf-8"))
+    reliability = {}
+    if manifest.get("reliability_file") and Path(manifest["reliability_file"]).exists():
+        reliability = json.loads(Path(manifest["reliability_file"]).read_text(encoding="utf-8"))
 
     total_papers = 0
     if db_path.exists():
@@ -292,6 +414,9 @@ def parse_run_summary(run_dir: Path) -> dict[str, Any]:
                 "online_semantic_latency_ms": metrics.get("online_semantic_latency_ms"),
                 "kb_ingest_ok": topic.get("kb_ingest_ok"),
                 "kb_diff_path": topic.get("kb_diff_path"),
+                "kb_contradiction_resolve_path": topic.get("kb_contradiction_resolve_path"),
+                "kb_contradiction_pairs_resolved": topic.get("kb_contradiction_pairs_resolved", 0),
+                "kb_contradiction_pairs_unresolved": topic.get("kb_contradiction_pairs_unresolved", 0),
                 "monitoring_enabled": topic.get("monitoring_enabled"),
                 "monitor_baseline_run_id": topic.get("monitor_baseline_run_id"),
                 "monitor_diff_path": topic.get("monitor_diff_path"),
@@ -323,7 +448,9 @@ def parse_run_summary(run_dir: Path) -> dict[str, Any]:
             "monitoring_errors": monitor_errors_total,
             "events": monitor_events,
         },
+        "reliability": reliability,
         "benchmark": benchmark,
+        "benchmark_regression": benchmark_regression,
         "snapshot_path": manifest.get("snapshot_path"),
     }
 
@@ -397,6 +524,28 @@ def collect_alert_events(summary: dict[str, Any], config: dict[str, Any]) -> lis
                 "code": "topic_runtime_failure",
                 "message": "At least one topic raised runtime failure during automation run",
                 "details": {},
+            }
+        )
+
+    reliability = (summary.get("reliability", {}) if isinstance(summary, dict) else {}) or {}
+    for ev in reliability.get("events", []) or []:
+        if isinstance(ev, dict) and ev.get("code"):
+            events.append(ev)
+
+    bench_reg = (summary.get("benchmark_regression", {}) if isinstance(summary, dict) else {}) or {}
+    if bool(bench_reg.get("regressed", False)):
+        events.append(
+            {
+                "severity": "warning",
+                "code": "benchmark_regression",
+                "message": "Benchmark regression gate detected a drift",
+                "details": {
+                    "reasons": bench_reg.get("reasons", []),
+                    "latency_regression_pct": bench_reg.get("latency_regression_pct"),
+                    "max_latency_regression_pct": bench_reg.get("max_latency_regression_pct"),
+                    "quality_metric": bench_reg.get("quality_metric"),
+                    "min_quality_floor": bench_reg.get("min_quality_floor"),
+                },
             }
         )
 
@@ -620,6 +769,20 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
     lines.append(f"- events_total: {mon.get('events_total', 0)}")
     lines.append(f"- events_by_severity: {mon.get('events_by_severity', {})}")
     lines.append(f"- monitoring_errors: {mon.get('monitoring_errors', 0)}")
+    lines.extend(["", "## Reliability"])
+    rel = summary.get("reliability", {}) or {}
+    lines.append(f"- enabled: {rel.get('enabled', False)}")
+    lines.append(f"- tracked_sources: {len(rel.get('sources', []) or [])}")
+    lines.append(f"- events: {len(rel.get('events', []) or [])}")
+    lines.extend(["", "## Benchmark Regression"])
+    br = summary.get("benchmark_regression", {}) or {}
+    lines.append(f"- enabled: {bool(br)}")
+    if br:
+        lines.append(f"- regressed: {br.get('regressed')}")
+        lines.append(f"- current_p95_ms: {br.get('current_p95_ms')}")
+        lines.append(f"- baseline_p95_ms: {br.get('baseline_p95_ms')}")
+        lines.append(f"- latency_regression_pct: {br.get('latency_regression_pct')}")
+        lines.append(f"- reasons: {br.get('reasons', [])}")
     return "\n".join(lines) + "\n"
 
 
@@ -662,9 +825,11 @@ def run_automation(config_path: str) -> str:
     global_cfg = cfg["global"]
     paths = cfg["paths"]
     thresholds = cfg["thresholds"]
+    retry_cfg = (global_cfg.get("retry", {}) if isinstance(global_cfg, dict) else {}) or {}
 
     topics_manifest: list[dict[str, Any]] = []
     any_topic_failure = False
+    sync_stats_list: list[dict[str, Any]] = []
 
     for topic in cfg["topics"]:
         name = topic["name"]
@@ -691,7 +856,10 @@ def run_automation(config_path: str) -> str:
                 *([] if not global_cfg.get("require_pdf", False) else ["--require-pdf"]),
             ],
             sync_log,
+            stage="sync-papers",
+            retry_cfg=retry_cfg,
         )
+        sync_stats_list.append(sync_stats)
         sync_stats_path = run_dir / f"sync_{slug}.stats.json"
         sync_stats_path.write_text(json.dumps(sync_stats, indent=2), encoding="utf-8")
         topics_manifest.append(
@@ -703,6 +871,17 @@ def run_automation(config_path: str) -> str:
                 "validate_ok": False,
             }
         )
+
+    reliability_stats: dict[str, Any] = {}
+    reliability_file = ""
+    rel_cfg = cfg.get("reliability", {}) if isinstance(cfg, dict) else {}
+    if bool(rel_cfg.get("enabled", False)):
+        reliability_stats = run_reliability_watchdog(
+            sync_stats_list=sync_stats_list,
+            reliability_cfg=rel_cfg,
+            run_id=run_id,
+        )
+        reliability_file = str(Path(str(reliability_stats.get("report_path", ""))).resolve())
 
     extract_stats_path = run_dir / "extract.stats.json"
     if bool(thresholds.get("layout_promotion_enabled", False)) and thresholds.get("layout_promotion_gold"):
@@ -732,6 +911,8 @@ def run_automation(config_path: str) -> str:
                 str(float(thresholds.get("layout_promotion_max_page_nonempty_regression", 0.02))),
             ],
             run_dir / "layout_promotion.log.json",
+            stage="layout-promotion-gate",
+            retry_cfg=retry_cfg,
         )
 
     extract_cmd = [
@@ -783,7 +964,12 @@ def run_automation(config_path: str) -> str:
             ["--ocr-noise-suppression"] if bool(global_cfg.get("ocr_noise_suppression")) else ["--no-ocr-noise-suppression"]
         )
 
-    extract_stats = _run_json_command(extract_cmd, run_dir / "extract.log.json")
+    extract_stats = _run_json_command(
+        extract_cmd,
+        run_dir / "extract.log.json",
+        stage="extract-corpus",
+        retry_cfg=retry_cfg,
+    )
     extract_stats_path.write_text(json.dumps(extract_stats, indent=2), encoding="utf-8")
 
     corpus_health_stats_path = run_dir / "corpus_health.stats.json"
@@ -806,6 +992,8 @@ def run_automation(config_path: str) -> str:
             str(float(thresholds.get("max_extract_error_rate", 0.8))),
         ],
         run_dir / "corpus_health.log.json",
+        stage="corpus-health",
+        retry_cfg=retry_cfg,
     )
     corpus_health_stats_path.write_text(json.dumps(corpus_health_stats, indent=2), encoding="utf-8")
     if not bool(corpus_health_stats.get("healthy", False)):
@@ -844,6 +1032,8 @@ def run_automation(config_path: str) -> str:
             *(["--vector-metadata-path", str(paths["vector_metadata_path"])] if paths.get("vector_metadata_path") else []),
         ],
         run_dir / "index.log.json",
+        stage="build-index",
+        retry_cfg=retry_cfg,
     )
     index_stats_path.write_text(json.dumps(index_stats, indent=2), encoding="utf-8")
 
@@ -946,6 +1136,8 @@ def run_automation(config_path: str) -> str:
                     str(report_path),
                 ],
                 run_dir / f"research_{slug}.log.json",
+                stage="research",
+                retry_cfg=retry_cfg,
             )
             _run_path_command(
                 [
@@ -1000,6 +1192,8 @@ def run_automation(config_path: str) -> str:
                     ),
                 ],
                 run_dir / f"validate_{slug}.log.json",
+                stage="validate-report",
+                retry_cfg=retry_cfg,
             )
             metrics_path = report_path.with_suffix(".metrics.json")
             topic_state["metrics_path"] = str(metrics_path)
@@ -1033,6 +1227,8 @@ def run_automation(config_path: str) -> str:
                         run_id,
                     ],
                     run_dir / f"kb_ingest_{slug}.log.json",
+                    stage="kb-ingest",
+                    retry_cfg=retry_cfg,
                 )
                 kb_ingest_path = run_dir / f"kb_ingest_{slug}.stats.json"
                 kb_ingest_path.write_text(json.dumps(kb_ingest_stats, indent=2), encoding="utf-8")
@@ -1053,10 +1249,69 @@ def run_automation(config_path: str) -> str:
                             *(["--since-run", since_run] if since_run else []),
                         ],
                         run_dir / f"kb_diff_{slug}.log.json",
+                        stage="kb-diff",
+                        retry_cfg=retry_cfg,
                     )
                     kb_diff_path = run_dir / f"kb_diff_{slug}.json"
                     kb_diff_path.write_text(json.dumps(kb_diff_stats, indent=2), encoding="utf-8")
                     topic_state["kb_diff_path"] = str(kb_diff_path)
+
+                resolver_enabled = bool(
+                    topic.get(
+                        "kb_contradiction_resolver_enabled",
+                        kb_cfg.get("contradiction_resolver_enabled_default", False),
+                    )
+                )
+                if resolver_enabled:
+                    resolver_out_dir = run_dir / f"kb_resolution_{slug}"
+                    resolver_stats = _run_json_command(
+                        [
+                            py,
+                            *cli,
+                            "kb-contradiction-resolve",
+                            "--kb-db",
+                            kb_db,
+                            "--topic",
+                            kb_topic,
+                            "--index",
+                            paths["index_path"],
+                            "--out-dir",
+                            str(resolver_out_dir),
+                            "--run-id",
+                            run_id,
+                            "--max-pairs",
+                            str(int(topic.get("kb_contradiction_resolver_max_pairs", kb_cfg.get("contradiction_resolver_max_pairs", 5)))),
+                            "--support-margin",
+                            str(float(topic.get("kb_contradiction_resolver_support_margin", kb_cfg.get("contradiction_resolver_support_margin", 0.05)))),
+                            "--top-k",
+                            str(int(topic.get("top_k", 8))),
+                            "--min-items",
+                            str(int(topic.get("min_items", 2))),
+                            "--min-score",
+                            str(float(topic.get("min_score", 0.0))),
+                            "--retrieval-mode",
+                            str(topic.get("retrieval_mode", global_cfg.get("retrieval_mode", "hybrid"))),
+                            "--alpha",
+                            str(float(topic.get("alpha", global_cfg.get("alpha", 0.6)))),
+                            "--max-per-paper",
+                            str(int(topic.get("max_per_paper", global_cfg.get("max_per_paper", 2)))),
+                            "--quality-prior-weight",
+                            str(float(topic.get("quality_prior_weight", global_cfg.get("quality_prior_weight", 0.15)))),
+                            "--embedding-model",
+                            str(global_cfg.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")),
+                            *(["--sources-config", str(paths["sources_config"])] if paths.get("sources_config") else []),
+                            *(["--papers-db", str(paths["db_path"])] if paths.get("db_path") else []),
+                            *(["--reliability-db", str((cfg.get("reliability", {}) or {}).get("db_path"))] if (cfg.get("reliability", {}) or {}).get("db_path") else []),
+                        ],
+                        run_dir / f"kb_contradiction_resolve_{slug}.log.json",
+                        stage="kb-contradiction-resolve",
+                        retry_cfg=retry_cfg,
+                    )
+                    resolver_stats_path = run_dir / f"kb_contradiction_resolve_{slug}.stats.json"
+                    resolver_stats_path.write_text(json.dumps(resolver_stats, indent=2), encoding="utf-8")
+                    topic_state["kb_contradiction_resolve_path"] = str(resolver_stats_path)
+                    topic_state["kb_contradiction_pairs_resolved"] = int(resolver_stats.get("pairs_resolved", 0))
+                    topic_state["kb_contradiction_pairs_unresolved"] = int(resolver_stats.get("pairs_unresolved", 0))
 
             mon_stats = evaluate_topic_monitoring(
                 cfg=cfg,
@@ -1073,48 +1328,94 @@ def run_automation(config_path: str) -> str:
                 raise
 
     benchmark_file = ""
+    benchmark_regression_file = ""
+    br_cfg = cfg.get("benchmark_regression", {}) if isinstance(cfg, dict) else {}
+    br_enabled = bool(br_cfg.get("enabled", False))
+    br_history_path = str(br_cfg.get("history_path", "runs/audit/benchmark_history.json"))
+    br_every_n_runs = int(br_cfg.get("run_every_n_runs", 1))
+    br_due, br_history_count, br_current_run_ordinal = _benchmark_due_for_run(
+        history_path=br_history_path,
+        run_every_n_runs=br_every_n_runs,
+    )
+
     if global_cfg.get("run_benchmark", True):
-        benchmark_file = str((reports_dir / "benchmark.json").resolve())
-        _run_path_command(
-            [
-                py,
-                *cli,
-                "benchmark-research",
-                "--index",
-                paths["index_path"],
-                "--queries-file",
-                "tests/fixtures/queries.txt",
-                "--runs-per-query",
-                "2",
-                "--retrieval-mode",
-                str(global_cfg.get("retrieval_mode", "lexical")),
-                "--alpha",
-                str(float(global_cfg.get("alpha", 0.6))),
-                "--max-per-paper",
-                str(int(global_cfg.get("max_per_paper", 2))),
-                "--embedding-model",
-                str(global_cfg.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")),
-                "--quality-prior-weight",
-                str(float(global_cfg.get("quality_prior_weight", 0.15))),
-                *(
-                    ["--vector-service-endpoint", str(global_cfg.get("vector_service_endpoint"))]
-                    if global_cfg.get("vector_service_endpoint")
-                    else []
-                ),
-                "--vector-nprobe",
-                str(int(global_cfg.get("vector_nprobe", 16))),
-                "--vector-ef-search",
-                str(int(global_cfg.get("vector_ef_search", 64))),
-                "--vector-topk-candidate-multiplier",
-                str(float(global_cfg.get("vector_topk_candidate_multiplier", 1.5))),
-                *(["--sources-config", str(paths["sources_config"])] if paths.get("sources_config") else []),
-                *(["--vector-index-path", str(paths["vector_index_path"])] if paths.get("vector_index_path") else []),
-                *(["--vector-metadata-path", str(paths["vector_metadata_path"])] if paths.get("vector_metadata_path") else []),
-                "--out",
-                benchmark_file,
-            ],
-            run_dir / "benchmark.log.json",
-        )
+        if br_enabled and not br_due:
+            next_due = br_current_run_ordinal + (br_every_n_runs - (br_current_run_ordinal % br_every_n_runs))
+            br_stats = {
+                "run_id": run_id,
+                "history_path": br_history_path,
+                "history_count": br_history_count,
+                "current_run_ordinal": br_current_run_ordinal,
+                "run_every_n_runs": br_every_n_runs,
+                "due_this_run": False,
+                "next_due_run_ordinal": next_due,
+                "skipped": True,
+                "skip_reason": "run_every_n_runs_not_due",
+                "regressed": False,
+                "reasons": [],
+            }
+            br_path = run_dir / "benchmark_regression.json"
+            br_path.write_text(json.dumps(br_stats, indent=2), encoding="utf-8")
+            benchmark_regression_file = str(br_path.resolve())
+        else:
+            benchmark_file = str((reports_dir / "benchmark.json").resolve())
+            _run_path_command(
+                [
+                    py,
+                    *cli,
+                    "benchmark-research",
+                    "--index",
+                    paths["index_path"],
+                    "--queries-file",
+                    "tests/fixtures/queries.txt",
+                    "--runs-per-query",
+                    "2",
+                    "--retrieval-mode",
+                    str(global_cfg.get("retrieval_mode", "lexical")),
+                    "--alpha",
+                    str(float(global_cfg.get("alpha", 0.6))),
+                    "--max-per-paper",
+                    str(int(global_cfg.get("max_per_paper", 2))),
+                    "--embedding-model",
+                    str(global_cfg.get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")),
+                    "--quality-prior-weight",
+                    str(float(global_cfg.get("quality_prior_weight", 0.15))),
+                    *(
+                        ["--vector-service-endpoint", str(global_cfg.get("vector_service_endpoint"))]
+                        if global_cfg.get("vector_service_endpoint")
+                        else []
+                    ),
+                    "--vector-nprobe",
+                    str(int(global_cfg.get("vector_nprobe", 16))),
+                    "--vector-ef-search",
+                    str(int(global_cfg.get("vector_ef_search", 64))),
+                    "--vector-topk-candidate-multiplier",
+                    str(float(global_cfg.get("vector_topk_candidate_multiplier", 1.5))),
+                    *(["--sources-config", str(paths["sources_config"])] if paths.get("sources_config") else []),
+                    *(["--vector-index-path", str(paths["vector_index_path"])] if paths.get("vector_index_path") else []),
+                    *(["--vector-metadata-path", str(paths["vector_metadata_path"])] if paths.get("vector_metadata_path") else []),
+                    "--out",
+                    benchmark_file,
+                ],
+                run_dir / "benchmark.log.json",
+                stage="benchmark-research",
+                retry_cfg=retry_cfg,
+            )
+            if br_enabled:
+                br_stats = run_benchmark_regression_check(
+                    benchmark_path=benchmark_file,
+                    history_path=br_history_path,
+                    run_id=run_id,
+                    max_latency_regression_pct=float(br_cfg.get("max_latency_regression_pct", 10.0)),
+                    min_quality_floor=float(br_cfg.get("min_quality_floor", 0.0)),
+                    history_window=int(br_cfg.get("history_window", 104)),
+                )
+                br_stats["run_every_n_runs"] = br_every_n_runs
+                br_stats["due_this_run"] = True
+                br_stats["current_run_ordinal"] = br_current_run_ordinal
+                br_path = run_dir / "benchmark_regression.json"
+                br_path.write_text(json.dumps(br_stats, indent=2), encoding="utf-8")
+                benchmark_regression_file = str(br_path.resolve())
 
     snapshot_path = ""
     if global_cfg.get("run_snapshot", True):
@@ -1139,6 +1440,8 @@ def run_automation(config_path: str) -> str:
                     paths["snapshot_dir"],
                 ],
                 run_dir / "snapshot.log.json",
+                stage="snapshot-run",
+                retry_cfg=retry_cfg,
             )
 
     manifest = {
@@ -1157,6 +1460,8 @@ def run_automation(config_path: str) -> str:
         "corpus_health_file": str(corpus_health_stats_path.resolve()),
         "index_stats_file": str(index_stats_path.resolve()),
         "benchmark_file": benchmark_file,
+        "benchmark_regression_file": benchmark_regression_file,
+        "reliability_file": reliability_file,
         "snapshot_path": snapshot_path,
         "any_topic_failure": any_topic_failure,
     }

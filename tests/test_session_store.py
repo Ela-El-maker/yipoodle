@@ -18,11 +18,8 @@ from pathlib import Path
 import pytest
 
 from src.apps.session_store import (
-    DEFAULT_SESSION_DB,
     SessionDetail,
     SessionInfo,
-    SessionQuery,
-    SessionSummary,
     close_session,
     create_session,
     delete_session,

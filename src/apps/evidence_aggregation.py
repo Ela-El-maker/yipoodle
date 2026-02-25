@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 

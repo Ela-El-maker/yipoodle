@@ -1,8 +1,9 @@
-from pathlib import Path
 import json
 import sqlite3
+import subprocess
 
-from src.apps.automation import load_automation_config, parse_run_summary, write_summary_outputs
+from src.apps.automation import _run_command_with_retry, load_automation_config, parse_run_summary, write_summary_outputs
+from src.apps.automation import _benchmark_due_for_run
 
 
 def test_load_automation_config_defaults(tmp_path) -> None:
@@ -20,9 +21,14 @@ topics:
     assert cfg["global"]["layout_engine"] == "shadow"
     assert cfg["global"]["ocr_enabled"] is None
     assert cfg["global"]["ocr_lang"] is None
+    assert cfg["global"]["retry"]["max_attempts"] == 1
     assert cfg["thresholds"]["min_citation_coverage"] == 1.0
     assert cfg["thresholds"]["semantic_enabled"] is True
     assert cfg["thresholds"]["semantic_shadow_mode"] is True
+    assert cfg["reliability"]["enabled"] is False
+    assert cfg["benchmark_regression"]["enabled"] is False
+    assert cfg["benchmark_regression"]["run_every_n_runs"] == 1
+    assert cfg["kb"]["contradiction_resolver_enabled_default"] is False
     assert len(cfg["topics"]) == 1
 
 
@@ -77,6 +83,16 @@ def test_parse_and_write_summary(tmp_path) -> None:
     )
     index_stats_path = run_dir / "index.stats.json"
     index_stats_path.write_text(json.dumps({"snippets": 1, "enriched": 1}), encoding="utf-8")
+    reliability_path = run_dir / "source_reliability.json"
+    reliability_path.write_text(
+        json.dumps({"enabled": True, "events": [{"code": "source_reliability_degraded"}], "sources": [{"source": "arxiv"}]}),
+        encoding="utf-8",
+    )
+    bench_reg_path = run_dir / "benchmark_regression.json"
+    bench_reg_path.write_text(
+        json.dumps({"regressed": True, "reasons": ["latency_regression"], "current_p95_ms": 120.0, "baseline_p95_ms": 100.0}),
+        encoding="utf-8",
+    )
 
     metrics_path = tmp_path / "runs" / "research_reports" / "topic.metrics.json"
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,6 +131,8 @@ def test_parse_and_write_summary(tmp_path) -> None:
         "extract_stats_file": str(extract_path),
         "index_stats_file": str(index_stats_path),
         "benchmark_file": "",
+        "benchmark_regression_file": str(bench_reg_path),
+        "reliability_file": str(reliability_path),
         "snapshot_path": "",
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -128,6 +146,8 @@ def test_parse_and_write_summary(tmp_path) -> None:
     assert summary["topics"][0]["validate_ok"] is True
     assert summary["topics"][0]["semantic_status"] == "warn"
     assert summary["topics"][0]["semantic_lines_below_threshold"] == 2
+    assert summary["reliability"]["enabled"] is True
+    assert summary["benchmark_regression"]["regressed"] is True
 
     out_json = audit_dir / "latest_summary.json"
     out_md = audit_dir / "latest_summary.md"
@@ -138,3 +158,49 @@ def test_parse_and_write_summary(tmp_path) -> None:
     md = out_md.read_text(encoding="utf-8")
     assert "## Semantic Faithfulness" in md
     assert "semantic_status=warn" in md
+
+
+def test_run_command_with_retry_eventual_success(monkeypatch, tmp_path) -> None:
+    calls = {"n": 0}
+
+    def _fake_run(args, capture_output, text):  # noqa: ANN001
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="boom")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout='{"ok":1}', stderr="")
+
+    monkeypatch.setattr("src.apps.automation.subprocess.run", _fake_run)
+    monkeypatch.setattr("src.apps.automation.time.sleep", lambda _s: None)
+
+    out, err = _run_command_with_retry(
+        ["echo", "x"],
+        tmp_path / "log.json",
+        stage="sync-papers",
+        retry_cfg={"max_attempts": 2, "base_delay_sec": 0.01, "max_delay_sec": 0.01, "retry_stages": ["sync-papers"]},
+    )
+    assert '"ok":1' in out
+    assert err == ""
+    assert calls["n"] == 2
+
+
+def test_benchmark_due_for_run_uses_history_and_cadence(tmp_path) -> None:
+    history = tmp_path / "history.json"
+    history.write_text(
+        json.dumps(
+            [
+                {"run_id": "r1"},
+                {"run_id": "r2"},
+                {"run_id": "r3"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    due, count, ordinal = _benchmark_due_for_run(history_path=str(history), run_every_n_runs=5)
+    assert due is False
+    assert count == 3
+    assert ordinal == 4
+
+    due2, count2, ordinal2 = _benchmark_due_for_run(history_path=str(history), run_every_n_runs=4)
+    assert due2 is True
+    assert count2 == 3
+    assert ordinal2 == 4

@@ -36,6 +36,7 @@ pytest -q
 4. **Run the full test suite** before committing:
 
    ```bash
+   make lint
    pytest -q
    ```
 
@@ -48,6 +49,8 @@ pytest -q
    ```
 
 6. **Push and open a pull request** against `main`.
+
+CI on pull requests automatically runs lint, tests, and quality gates.
 
 ---
 

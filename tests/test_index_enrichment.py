@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from src.apps.index_builder import build_index
 from src.apps.paper_ingest import init_db, upsert_papers

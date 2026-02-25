@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections import Counter
 import re
 
 TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")

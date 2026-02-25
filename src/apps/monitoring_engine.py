@@ -285,11 +285,11 @@ def monitor_digest_flush(*, config: dict[str, Any]) -> dict[str, Any]:
 def monitor_status(*, config: dict[str, Any]) -> dict[str, Any]:
     mon = (config.get("monitoring", {}) if isinstance(config, dict) else {}) or {}
     digest = (mon.get("digest", {}) if isinstance(mon, dict) else {}) or {}
-    path = Path(str(digest.get("path", "runs/audit/monitor_digest_queue.json")))
+    digest_path = Path(str(digest.get("path", "runs/audit/monitor_digest_queue.json")))
     queue_len = 0
-    if path.exists():
+    if digest_path.exists():
         try:
-            q = json.loads(path.read_text(encoding="utf-8"))
+            q = json.loads(digest_path.read_text(encoding="utf-8"))
             if isinstance(q, list):
                 queue_len = len(q)
         except Exception:
@@ -301,9 +301,9 @@ def monitor_status(*, config: dict[str, Any]) -> dict[str, Any]:
     schedule_entries: list[dict[str, Any]] = []
     schedule_by_backend: dict[str, int] = {}
     if schedule_dir.exists():
-        for path in sorted(schedule_dir.glob("*.json")):
+        for sched_path in sorted(schedule_dir.glob("*.json")):
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload = json.loads(sched_path.read_text(encoding="utf-8"))
             except Exception:
                 continue
             if not isinstance(payload, dict):
@@ -312,18 +312,18 @@ def monitor_status(*, config: dict[str, Any]) -> dict[str, Any]:
             schedule_by_backend[backend] = int(schedule_by_backend.get(backend, 0)) + 1
             schedule_entries.append(
                 {
-                    "name": payload.get("name", path.stem),
+                    "name": payload.get("name", sched_path.stem),
                     "schedule": payload.get("schedule"),
                     "backend": backend,
                     "updated_utc": payload.get("updated_utc"),
-                    "path": str(path),
+                    "path": str(sched_path),
                 }
             )
     return {
         "monitoring_enabled_default": bool(mon.get("enabled_default", False)),
         "baseline": mon.get("baseline", "previous_successful_run"),
         "failure_policy": mon.get("failure_policy", "fail_open"),
-        "digest_queue_path": str(path),
+        "digest_queue_path": str(digest_path),
         "digest_queue_count": queue_len,
         "schedule_registry_dir": str(schedule_dir),
         "schedule_registry_count": len(schedule_entries),

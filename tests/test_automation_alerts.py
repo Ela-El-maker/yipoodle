@@ -149,3 +149,24 @@ def test_collect_alert_events_includes_high_monitoring_and_skips_medium_digest()
     codes = {e["code"] for e in events}
     assert "monitor_trigger_high" in codes
     assert "monitor_trigger_medium_digest_queued" not in codes
+
+
+def test_collect_alert_events_includes_reliability_and_benchmark_regression() -> None:
+    summary = _base_summary()
+    summary["reliability"] = {
+        "events": [
+            {"severity": "warning", "code": "source_reliability_degraded", "message": "x", "details": {}},
+        ]
+    }
+    summary["benchmark_regression"] = {
+        "regressed": True,
+        "reasons": ["latency_regression"],
+        "latency_regression_pct": 15.0,
+        "max_latency_regression_pct": 10.0,
+        "quality_metric": 0.9,
+        "min_quality_floor": 0.5,
+    }
+    events = collect_alert_events(summary, _base_config())
+    codes = {e["code"] for e in events}
+    assert "source_reliability_degraded" in codes
+    assert "benchmark_regression" in codes

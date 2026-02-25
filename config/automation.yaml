@@ -37,6 +37,20 @@ global:
   alpha: 0.6
   max_per_paper: 2
   quality_prior_weight: 0.15
+  retry:
+    max_attempts: 1
+    base_delay_sec: 1.0
+    max_delay_sec: 8.0
+    retry_stages:
+      - sync-papers
+      - extract-corpus
+      - corpus-health
+      - build-index
+      - research
+      - validate-report
+      - benchmark-research
+      - snapshot-run
+      - kb-contradiction-resolve
   run_benchmark: true
   run_snapshot: true
   continue_on_topic_error: true
@@ -75,11 +89,11 @@ thresholds:
   semantic_min_support: 0.55
   semantic_max_contradiction: 0.30
   semantic_fail_on_low_support: false
-  online_semantic_model: gpt-4o-mini
+  online_semantic_model: deepseek-ai/deepseek-v3.2
   online_semantic_timeout_sec: 12.0
   online_semantic_max_checks: 12
   online_semantic_on_warn_only: true
-  online_semantic_base_url: null
+  online_semantic_base_url: https://integrate.api.nvidia.com/v1
   online_semantic_api_key: null
 
 alerts:
@@ -103,6 +117,26 @@ alerts:
 kb:
   enabled_default: false
   db_path: data/kb/knowledge.db
+  contradiction_resolver_enabled_default: false
+  contradiction_resolver_max_pairs: 5
+  contradiction_resolver_support_margin: 0.05
+
+reliability:
+  enabled: false
+  db_path: data/reliability/source_reliability.db
+  state_path: runs/audit/source_reliability_state.json
+  report_path: runs/audit/source_reliability.json
+  degrade_threshold: 0.30
+  critical_threshold: 0.15
+  auto_disable_after: 0
+
+benchmark_regression:
+  enabled: false
+  history_path: runs/audit/benchmark_history.json
+  max_latency_regression_pct: 10.0
+  min_quality_floor: 0.0
+  history_window: 104
+  run_every_n_runs: 1
 
 monitoring:
   enabled_default: false

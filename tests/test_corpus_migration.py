@@ -1,4 +1,3 @@
-from pathlib import Path
 import json
 
 from src.apps.corpus_migration import migrate_extraction_meta

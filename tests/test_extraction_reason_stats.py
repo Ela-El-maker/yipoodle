@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from src.apps import evidence_extract as ee
 

@@ -1,4 +1,3 @@
-from pathlib import Path
 import json
 
 from src.apps.corpus_health import evaluate_corpus_health

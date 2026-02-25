@@ -15,6 +15,18 @@ This document covers deployment options for Yipoodle, including Docker container
 
 ---
 
+## CI/CD and Repository Triggers
+
+GitHub Actions workflow: `.github/workflows/ci.yml`
+
+- `pull_request`: runs lint, pytest, and quality gates.
+- `push` to `main` and version tags: runs the same checks, then builds/pushes CPU image to GHCR.
+- `workflow_dispatch`: manual trigger support.
+
+This provides automated validation on PRs and automated build/deploy on push.
+
+---
+
 ## Local Installation
 
 ```bash
@@ -99,6 +111,23 @@ docker run --rm -v $(pwd)/data:/app/data -v $(pwd)/runs:/app/runs \
 
 # Interactive shell
 docker run --rm -it -v $(pwd)/data:/app/data yipoodle:cpu bash
+```
+
+### Automated Bootstrap
+
+```bash
+# Local venv + dependencies + standard directory provisioning
+bash scripts/bootstrap_env.sh --profile cpu
+
+# Optional: include Docker image build
+bash scripts/bootstrap_env.sh --profile cpu --with-docker-build
+```
+
+### Compose Provisioning (CPU)
+
+```bash
+docker compose -f deploy/docker-compose.cpu.yml up -d --build
+docker compose -f deploy/docker-compose.cpu.yml down
 ```
 
 ### Volume Mounts

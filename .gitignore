@@ -3,8 +3,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 runs/
-data/papers/
-data/extracted/
-data/indexes/
-data/reports/
 data/
+.env
+.env.*
+!.env.example
+

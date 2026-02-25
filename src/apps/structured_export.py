@@ -14,9 +14,9 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Literal, Sequence
 
-from src.core.schemas import EvidencePack, PaperRecord, ResearchReport
+from src.core.schemas import EvidencePack, ResearchReport
 
 log = logging.getLogger(__name__)
 
