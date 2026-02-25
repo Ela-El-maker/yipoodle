@@ -1,4 +1,3 @@
-import json
 
 from src.apps import vector_service
 

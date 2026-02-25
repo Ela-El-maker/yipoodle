@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from src.apps.index_builder import build_index
 from src.apps.research_copilot import run_research

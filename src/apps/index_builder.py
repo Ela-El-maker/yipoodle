@@ -276,7 +276,6 @@ def build_index_incremental(
         from src.apps.retrieval import derive_vector_paths
         from src.apps.vector_index import (
             append_to_vector_index,
-            load_vector_index,
         )
 
         idx_path, meta_path = derive_vector_paths(out_path, vector_index_path, vector_metadata_path)

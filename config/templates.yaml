@@ -1,0 +1,22 @@
+templates:
+  lit_review:
+    description: "Literature review workflow (scope -> methods -> findings -> gaps -> next steps)"
+    questions:
+      - "Define the scope and core problem in {topic}."
+      - "What methods and model families are used in {topic}?"
+      - "What are the strongest recurring findings in {topic}?"
+      - "What gaps and limitations remain in {topic}?"
+      - "What concrete next experiments should be prioritized for {topic}?"
+  gap_analysis:
+    description: "Focused gap analysis across current evidence"
+    questions:
+      - "What is currently well-supported in {topic}?"
+      - "Which claims in {topic} have weak or conflicting evidence?"
+      - "What missing data or experiments block progress in {topic}?"
+  methodology_comparison:
+    description: "Compare method families and trade-offs"
+    questions:
+      - "List the top method families used in {topic}."
+      - "Compare trade-offs (accuracy, latency, cost, robustness) in {topic}."
+      - "Which method families underperform and why in {topic}?"
+      - "Recommend practical method choices for {topic} under constraints."

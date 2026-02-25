@@ -1,4 +1,3 @@
-from pathlib import Path
 import json
 
 from src.apps.extraction_quality_report import build_extraction_quality_report, write_extraction_quality_report

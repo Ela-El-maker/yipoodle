@@ -13,6 +13,7 @@ This document describes all YAML configuration files in Yipoodle, their structur
 | `config/automation.yaml`   | Automation engine, alerting, topics, and monitoring          |
 | `config/router.yaml`       | Query router rules and thresholds                            |
 | `config/ask_glossary.yaml` | ASK mode glossary term definitions                           |
+| `config/templates.yaml`    | Research session templates (multi-query workflows)           |
 | `config/domains/*.yaml`    | Domain-specific source configs (NLP, robotics, etc.)         |
 
 ---
@@ -285,6 +286,9 @@ kb:
   topic_auto: true
   top_k: 5
   merge_weight: 0.15
+  contradiction_resolver_enabled_default: false
+  contradiction_resolver_max_pairs: 5
+  contradiction_resolver_support_margin: 0.05
 ```
 
 ### `monitoring`
@@ -307,6 +311,37 @@ monitoring:
     interval: daily
     max_events: 50
 ```
+
+### `reliability`
+
+Connector reliability watchdog (post-sync feedback loop):
+
+```yaml
+reliability:
+  enabled: false
+  db_path: "data/reliability/source_reliability.db"
+  state_path: "runs/audit/source_reliability_state.json"
+  report_path: "runs/audit/source_reliability.json"
+  degrade_threshold: 0.30
+  critical_threshold: 0.15
+  auto_disable_after: 0
+```
+
+### `benchmark_regression`
+
+Benchmark drift gate against historical baseline:
+
+```yaml
+benchmark_regression:
+  enabled: false
+  history_path: "runs/audit/benchmark_history.json"
+  max_latency_regression_pct: 10.0
+  min_quality_floor: 0.0
+  history_window: 104
+  run_every_n_runs: 1
+```
+
+`run_every_n_runs` lets you gate expensive benchmark checks (for example `5` means every fifth automation run).
 
 ### `topics`
 
@@ -377,6 +412,24 @@ amortization: "Spreading the cost of an asset over its useful life in accounting
 ```
 
 Add new terms by adding key-value pairs. The ASK mode checks this glossary before falling back to a generic definition response.
+
+---
+
+## config/templates.yaml
+
+Template definitions for `research-template` automation workflow.
+
+```yaml
+templates:
+  lit_review:
+    description: "Literature review sequence"
+    questions:
+      - "Define the scope in {topic}."
+      - "What methods are used in {topic}?"
+      - "What evidence gaps remain in {topic}?"
+```
+
+Each template question is rendered with `{topic}` substitution and executed through the normal `research` pipeline.
 
 ---
 

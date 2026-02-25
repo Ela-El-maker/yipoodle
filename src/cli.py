@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from datetime import datetime, timezone
 import time
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -17,10 +18,12 @@ from src.apps.extraction_quality_report import write_extraction_quality_report
 from src.apps.evidence_extract import extract_from_papers_dir, extract_from_papers_dir_with_db
 from src.apps.index_builder import build_index, build_index_incremental
 from src.apps.benchmark import benchmark_research, benchmark_scale
+from src.apps.benchmark_regression import run_benchmark_regression_check
 from src.apps.live_snapshot_store import load_cached_snapshot, save_snapshot, snapshot_to_snippets
 from src.apps.live_sources import fetch_live_source, live_snapshot_config, live_sources_config
 from src.apps.ask_mode import run_ask_mode
 from src.apps.kb_diff import run_kb_diff
+from src.apps.kb_contradiction_resolver import run_kb_contradiction_resolver
 from src.apps.kb_ingest import backfill_kb, ingest_report_to_kb
 from src.apps.kb_query import run_kb_query
 from src.apps.layout_promotion import run_layout_promotion_gate
@@ -29,7 +32,9 @@ from src.apps.monitoring_history import run_monitor_history_check
 from src.apps.monitoring_soak import run_monitor_soak_sim
 from src.apps.monitor_mode import run_monitor_mode, unregister_monitor
 from src.apps.notes_mode import run_notes_mode
+from src.apps.research_template import run_research_template
 from src.apps.query_router_eval import run_query_router_eval
+from src.apps.reliability_watchdog import run_reliability_watchdog
 from src.apps.corpus_health import evaluate_corpus_health
 from src.apps.corpus_migration import migrate_extraction_meta
 from src.apps.snapshot import create_snapshot
@@ -43,7 +48,6 @@ from src.apps.structured_export import (
     export_report_multi,
     load_evidence_json,
     load_report_json,
-    SUPPORTED_FORMATS,
 )
 from src.apps.session_store import (
     DEFAULT_SESSION_DB,
@@ -68,11 +72,10 @@ from src.apps.source_reliability import (
     delete_source,
     reliability_report,
     render_reliability_markdown,
-    source_reliability_prior,
     EVENT_TYPES,
 )
 from src.apps.sources_config import load_sources_config, ocr_config
-from src.apps.automation import dispatch_alerts, load_automation_config
+from src.apps.automation import dispatch_alerts, load_automation_config, run_automation
 from src.apps.query_router import dispatch_query, load_router_config, route_query
 from src.apps.vector_service import (
     start_vector_service_server,
@@ -80,6 +83,7 @@ from src.apps.vector_service import (
     vector_service_health,
     vector_service_query,
 )
+from src.apps.watch_ingest import run_watch_ingest
 from src.core.schemas import EvidencePack
 from src.core.validation import (
     report_coverage_metrics,
@@ -681,6 +685,34 @@ def cmd_kb_diff(args: argparse.Namespace) -> None:
     print(json.dumps(payload, indent=2))
 
 
+def cmd_kb_contradiction_resolve(args: argparse.Namespace) -> None:
+    payload = run_kb_contradiction_resolver(
+        kb_db=args.kb_db,
+        topic=args.topic,
+        index_path=args.index,
+        out_dir=args.out_dir,
+        run_id=args.run_id,
+        max_pairs=args.max_pairs,
+        support_margin=args.support_margin,
+        top_k=args.top_k,
+        min_items=args.min_items,
+        min_score=args.min_score,
+        retrieval_mode=args.retrieval_mode,
+        alpha=args.alpha,
+        max_per_paper=args.max_per_paper,
+        quality_prior_weight=args.quality_prior_weight,
+        embedding_model=args.embedding_model,
+        sources_config_path=args.sources_config,
+        papers_db=args.papers_db,
+        reliability_db=args.reliability_db,
+    )
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+
+
 def cmd_kb_backfill(args: argparse.Namespace) -> None:
     payload = backfill_kb(
         kb_db=args.kb_db,
@@ -914,6 +946,11 @@ def cmd_run_pipeline(args: argparse.Namespace) -> None:
     print(f"summary_written:{summary_out}")
     if summary.get("status") != "ok":
         raise SystemExit(f"Pipeline failed at stage: {summary.get('failed_stage')}")
+
+
+def cmd_run_automation(args: argparse.Namespace) -> None:
+    run_dir = run_automation(args.config)
+    print(run_dir)
 
 
 def cmd_migrate_extraction_meta(args: argparse.Namespace) -> None:
@@ -1361,6 +1398,107 @@ def cmd_query_router_eval(args: argparse.Namespace) -> None:
         raise SystemExit(f"query-router-eval gate failed: accuracy={got:.4f} < strict_min_accuracy={need:.4f}")
 
 
+def cmd_research_template(args: argparse.Namespace) -> None:
+    payload = run_research_template(
+        template_name=args.template,
+        topic=args.topic,
+        index_path=args.index,
+        out_dir=args.out_dir,
+        session_db=args.session_db,
+        templates_path=args.templates_config,
+        sources_config_path=args.sources_config,
+        top_k=args.top_k,
+        min_items=args.min_items,
+        min_score=args.min_score,
+        retrieval_mode=args.retrieval_mode,
+        alpha=args.alpha,
+        max_per_paper=args.max_per_paper,
+        quality_prior_weight=args.quality_prior_weight,
+        embedding_model=args.embedding_model,
+    )
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_watch_ingest(args: argparse.Namespace) -> None:
+    payload = run_watch_ingest(
+        watch_dir=args.dir,
+        extracted_dir=args.extracted_dir,
+        db_path=args.db_path,
+        index_path=args.index,
+        once=bool(args.once),
+        poll_interval_sec=float(args.poll_interval_sec),
+        max_events=int(args.max_events),
+        min_text_chars=int(args.min_text_chars),
+        out_path=args.out,
+    )
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_benchmark_regression_check(args: argparse.Namespace) -> None:
+    payload = run_benchmark_regression_check(
+        benchmark_path=args.benchmark,
+        history_path=args.history,
+        run_id=args.run_id,
+        max_latency_regression_pct=args.max_latency_regression_pct,
+        min_quality_floor=args.min_quality_floor,
+        history_window=args.history_window,
+    )
+    if args.out:
+        p = Path(args.out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+    if bool(payload.get("regressed", False)) and bool(args.fail_on_regression):
+        raise SystemExit("benchmark regression gate failed")
+
+
+def cmd_reliability_watchdog(args: argparse.Namespace) -> None:
+    cfg: dict[str, Any] = {"enabled": True}
+    if args.config:
+        acfg = load_automation_config(args.config)
+        cfg = dict((acfg.get("reliability", {}) if isinstance(acfg, dict) else {}) or {})
+        cfg["enabled"] = True
+    if args.reliability_db:
+        cfg["db_path"] = args.reliability_db
+    if args.state_path:
+        cfg["state_path"] = args.state_path
+    if args.report_path:
+        cfg["report_path"] = args.report_path
+    if args.degrade_threshold is not None:
+        cfg["degrade_threshold"] = float(args.degrade_threshold)
+    if args.critical_threshold is not None:
+        cfg["critical_threshold"] = float(args.critical_threshold)
+    if args.auto_disable_after is not None:
+        cfg["auto_disable_after"] = int(args.auto_disable_after)
+
+    sync_stats: list[dict[str, Any]] = []
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+        manifest_path = run_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise SystemExit(f"manifest not found: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for topic in manifest.get("topics", []) or []:
+            sp = topic.get("sync_stats_file")
+            if sp and Path(sp).exists():
+                sync_stats.append(json.loads(Path(sp).read_text(encoding="utf-8")))
+    for sp in args.sync_stats or []:
+        p = Path(sp)
+        if not p.exists():
+            raise SystemExit(f"sync stats file not found: {p}")
+        sync_stats.append(json.loads(p.read_text(encoding="utf-8")))
+    if not sync_stats:
+        raise SystemExit("reliability-watchdog requires --run-dir or at least one --sync-stats file")
+
+    run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    payload = run_reliability_watchdog(sync_stats_list=sync_stats, reliability_cfg=cfg, run_id=run_id)
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Offline Research Copilot + Tiny GPT")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1650,6 +1788,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None)
     p.set_defaults(func=cmd_kb_backfill)
 
+    p = sub.add_parser("kb-contradiction-resolve", help="resolve disputed KB contradiction pairs via targeted follow-up research")
+    p.add_argument("--kb-db", default="data/kb/knowledge.db")
+    p.add_argument("--topic", required=True)
+    p.add_argument("--index", required=True)
+    p.add_argument("--out-dir", default="runs/audit/kb_resolution")
+    p.add_argument("--out", default=None, help="Optional path to write resolver payload JSON")
+    p.add_argument("--run-id", default=None)
+    p.add_argument("--max-pairs", type=int, default=5)
+    p.add_argument("--support-margin", type=float, default=0.05)
+    p.add_argument("--top-k", type=int, default=8)
+    p.add_argument("--min-items", type=int, default=2)
+    p.add_argument("--min-score", type=float, default=0.0)
+    p.add_argument("--retrieval-mode", choices=["lexical", "vector", "hybrid"], default="hybrid")
+    p.add_argument("--alpha", type=float, default=0.6)
+    p.add_argument("--max-per-paper", type=int, default=2)
+    p.add_argument("--quality-prior-weight", type=float, default=0.15)
+    p.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
+    p.add_argument("--sources-config", default="config/sources.yaml")
+    p.add_argument("--papers-db", default=None)
+    p.add_argument("--reliability-db", default=None)
+    p.set_defaults(func=cmd_kb_contradiction_resolve)
+
     p = sub.add_parser("benchmark-research", help="benchmark research runtime and cache effects")
     p.add_argument("--index", default="data/indexes/bm25_index.json")
     p.add_argument("--query", action="append")
@@ -1798,6 +1958,65 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--alerts-config", default="config/automation.yaml")
     p.add_argument("--alert-out", default="runs/audit/latest_alert_pipeline.json")
     p.set_defaults(func=cmd_run_pipeline)
+
+    p = sub.add_parser("run-automation", help="run scheduled automation workflow defined in automation config")
+    p.add_argument("--config", default="config/automation.yaml")
+    p.set_defaults(func=cmd_run_automation)
+
+    p = sub.add_parser("research-template", help="run a multi-query research template and persist a session pack")
+    p.add_argument("--template", required=True)
+    p.add_argument("--topic", required=True)
+    p.add_argument("--index", required=True)
+    p.add_argument("--out-dir", default=None)
+    p.add_argument("--templates-config", default="config/templates.yaml")
+    p.add_argument("--session-db", default=DEFAULT_SESSION_DB)
+    p.add_argument("--sources-config", default="config/sources.yaml")
+    p.add_argument("--top-k", type=int, default=8)
+    p.add_argument("--min-items", type=int, default=2)
+    p.add_argument("--min-score", type=float, default=0.5)
+    p.add_argument("--retrieval-mode", choices=["lexical", "vector", "hybrid"], default="hybrid")
+    p.add_argument("--alpha", type=float, default=0.6)
+    p.add_argument("--max-per-paper", type=int, default=2)
+    p.add_argument("--quality-prior-weight", type=float, default=0.15)
+    p.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
+    p.set_defaults(func=cmd_research_template)
+
+    p = sub.add_parser("watch-ingest", help="watch a PDF folder and trigger extract+incremental-index on change")
+    p.add_argument("--dir", required=True, help="Directory to watch for new PDFs")
+    p.add_argument("--extracted-dir", default="data/extracted")
+    p.add_argument("--db-path", default="data/papers.db")
+    p.add_argument("--index", default="data/indexes/bm25_index.json")
+    p.add_argument("--once", action="store_true", help="Run one scan cycle and exit")
+    p.add_argument("--poll-interval-sec", type=float, default=2.0)
+    p.add_argument("--max-events", type=int, default=0, help="Stop after processing N changed files (0 = unlimited)")
+    p.add_argument("--min-text-chars", type=int, default=200)
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_watch_ingest)
+
+    p = sub.add_parser("benchmark-regression-check", help="compare benchmark result against history and emit regression status")
+    p.add_argument("--benchmark", required=True, help="Path to benchmark JSON output")
+    p.add_argument("--history", default="runs/audit/benchmark_history.json")
+    p.add_argument("--run-id", default=None)
+    p.add_argument("--max-latency-regression-pct", type=float, default=10.0)
+    p.add_argument("--min-quality-floor", type=float, default=0.0)
+    p.add_argument("--history-window", type=int, default=104)
+    p.add_argument("--fail-on-regression", action="store_true")
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_benchmark_regression_check)
+
+    p = sub.add_parser("reliability-watchdog", help="ingest sync stats and update source reliability health")
+    p.add_argument("--config", default=None, help="Optional automation config for reliability defaults")
+    p.add_argument("--run-dir", default=None, help="Automation run directory containing manifest.json")
+    p.add_argument("--sync-stats", action="append", default=[], help="Path(s) to sync stats JSON files")
+    p.add_argument("--run-id", default=None)
+    p.add_argument("--reliability-db", default=None)
+    p.add_argument("--state-path", default=None)
+    p.add_argument("--report-path", default=None)
+    p.add_argument("--degrade-threshold", type=float, default=None)
+    p.add_argument("--critical-threshold", type=float, default=None)
+    p.add_argument("--auto-disable-after", type=int, default=None)
+    p.add_argument("--out", default=None)
+    p.set_defaults(func=cmd_reliability_watchdog)
 
     p = sub.add_parser("layout-promotion-gate", help="evaluate legacy vs v2 extraction and update layout promotion state")
     p.add_argument("--papers-dir", required=True)

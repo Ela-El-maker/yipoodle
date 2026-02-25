@@ -1,0 +1,16 @@
+services:
+  yipoodle:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cpu
+    image: yipoodle:cpu
+    working_dir: /app
+    command: ["python", "-m", "src.cli", "--help"]
+    environment:
+      UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ../data:/app/data
+      - ../runs:/app/runs
+      - ../config:/app/config

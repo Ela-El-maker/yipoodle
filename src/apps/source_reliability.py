@@ -30,15 +30,12 @@ Usage::
 
 from __future__ import annotations
 
-import json
-import math
 import sqlite3
-from collections import Counter
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Iterator
 
 # ---------------------------------------------------------------------------
 # Constants

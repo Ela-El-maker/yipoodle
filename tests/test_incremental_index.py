@@ -12,11 +12,9 @@ Covers:
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 from src.apps.index_builder import (
-    _IndexDelta,
     _compute_delta,
     _load_and_enrich_snippets,
     build_index,

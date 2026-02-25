@@ -133,6 +133,15 @@ A long-lived SQLite store for accumulating knowledge across runs:
 | MONITOR  | Create recurring topic watch with cron scheduling        | No (creates automation config) |
 | NOTES    | Research + KB ingest + structured study notes            | Yes                            |
 
+### Automation Workflow Extensions
+
+The automation layer also supports operational workflows beyond the core run:
+
+- **Research templates** (`research-template`) for repeatable multi-query session packs.
+- **Source reliability watchdog** (`reliability-watchdog`) for connector health scoring.
+- **Benchmark regression gate** (`benchmark-regression-check`) for latency/quality drift detection.
+- **File-drop ingestion watcher** (`watch-ingest`) for incremental updates when new PDFs appear.
+
 ---
 
 ## Intended Users

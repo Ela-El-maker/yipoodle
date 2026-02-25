@@ -20,7 +20,6 @@ import pytest
 
 from src.apps.evidence_aggregation import (
     AggregationResult,
-    DEFAULT_CLUSTER_MODEL,
     EvidenceCluster,
     _agglomerative_cluster,
     _heuristic_contradiction,
@@ -32,9 +31,7 @@ from src.apps.evidence_aggregation import (
 from src.core.schemas import (
     EvidenceItem,
     EvidencePack,
-    ExperimentProposal,
     ResearchReport,
-    ShortlistItem,
 )
 
 
