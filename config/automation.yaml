@@ -89,11 +89,11 @@ thresholds:
   semantic_min_support: 0.55
   semantic_max_contradiction: 0.30
   semantic_fail_on_low_support: false
-  online_semantic_model: gpt-4o-mini
+  online_semantic_model: deepseek-ai/deepseek-v3.2
   online_semantic_timeout_sec: 12.0
   online_semantic_max_checks: 12
   online_semantic_on_warn_only: true
-  online_semantic_base_url: null
+  online_semantic_base_url: https://integrate.api.nvidia.com/v1
   online_semantic_api_key: null
 
 alerts:

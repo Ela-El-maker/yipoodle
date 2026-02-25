@@ -111,7 +111,7 @@ jobs:
 
   build-and-publish-image:
     needs: quality-gates
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
