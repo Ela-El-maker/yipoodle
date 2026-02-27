@@ -34,7 +34,7 @@ def test_pages_render(tmp_path: Path) -> None:
     with TestClient(app) as client:
         r1 = client.get("/")
         assert r1.status_code == 200
-        assert "Chats" in r1.text
+        assert "Sessions" in r1.text
 
         r0 = client.get("/run-console")
         assert r0.status_code == 200
@@ -42,12 +42,12 @@ def test_pages_render(tmp_path: Path) -> None:
 
         r2 = client.get("/runs")
         assert r2.status_code == 200
-        assert "Recent Runs" in r2.text
+        assert "Run History" in r2.text
 
         r3 = client.get("/monitor")
         assert r3.status_code == 200
-        assert "Monitor Topics" in r3.text
+        assert "Monitoring Dashboard" in r3.text
 
         r4 = client.get("/health")
         assert r4.status_code == 200
-        assert "Health" in r4.text
+        assert "System Health" in r4.text

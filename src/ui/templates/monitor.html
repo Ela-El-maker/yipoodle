@@ -1,73 +1,217 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="card">
-  <h2>Monitor Topics</h2>
+{% extends "base.html" %} {% block content %}
+<div class="section-header">
+  <h2>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+    Monitoring Dashboard
+  </h2>
+  <span class="badge"
+    >{{ topics | length }} topic{{ 's' if topics | length != 1 else '' }}</span
+  >
+</div>
+
+<!-- Monitor Topics as Cards -->
+{% if topics %}
+<div class="topic-grid">
+  {% for topic in topics %}
+  <div class="monitor-topic-card">
+    <div class="topic-header">
+      <span
+        class="status-dot {{ 'error' if topic._parse_error is defined else 'ok' }}"
+      ></span>
+      <span class="topic-name">{{ topic.name }}</span>
+    </div>
+    {% if topic.query is defined %}
+    <div class="topic-detail"><strong>Query:</strong> {{ topic.query }}</div>
+    {% endif %} {% if topic.schedule is defined %}
+    <div class="topic-detail">
+      <strong>Schedule:</strong> <code>{{ topic.schedule }}</code>
+    </div>
+    {% endif %}
+    <div class="topic-detail muted">
+      <code class="text-sm">{{ topic._path }}</code>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <p class="muted" style="text-align: center; padding: 20px">
+    No monitor topics registered yet. Create one below.
+  </p>
+</div>
+{% endif %}
+
+<!-- Create / Manage Monitors -->
+<div class="card">
+  <h2>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+    Create / Update Monitor
+  </h2>
+  <form id="monitor-create-form">
+    <div class="grid-2">
+      <label
+        >Question
+        <input
+          type="text"
+          name="question"
+          value="Monitor NVIDIA stock signals"
+        />
+      </label>
+      <label
+        >Schedule (cron)
+        <input type="text" name="schedule" value="0 */6 * * *" />
+      </label>
+    </div>
+    <div style="margin-top: 4px">
+      <button type="submit">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+        Create / Update
+      </button>
+    </div>
+  </form>
+
+  <h3>Unregister Monitor</h3>
+  <form
+    id="monitor-unregister-form"
+    style="display: flex; gap: 12px; align-items: flex-end"
+  >
+    <label style="flex: 1"
+      >Monitor Name
+      <input type="text" name="name" placeholder="e.g. nvidia_stock_signals" />
+    </label>
+    <button type="submit" style="background: var(--error); margin-top: 6px">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <polyline points="3 6 5 6 21 6" />
+        <path
+          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+        />
+      </svg>
+      Unregister
+    </button>
+  </form>
+  <pre id="monitor-log" class="log" style="margin-top: 14px; max-height: 200px">
+Ready — operations will be logged here.</pre
+  >
+</div>
+
+<!-- Automation Summary -->
+<div class="card">
+  <h2>
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+    Latest Automation Summary
+  </h2>
+  {% if latest_summary %} {% if latest_summary.status is defined %}
+  <div style="margin-bottom: 12px">
+    <span
+      class="status-badge {{ 'done' if latest_summary.status == 'completed' else ('failed' if latest_summary.status == 'failed' else 'running') }}"
+    >
+      <span
+        class="status-dot {{ 'ok' if latest_summary.status == 'completed' else ('error' if latest_summary.status == 'failed' else 'pending') }}"
+      ></span>
+      {{ latest_summary.status }}
+    </span>
+    {% if latest_summary.timestamp is defined %}
+    <span class="muted text-sm" style="margin-left: 8px"
+      >{{ latest_summary.timestamp }}</span
+    >
+    {% endif %}
+  </div>
+  {% endif %} {% if latest_summary.topics %}
+  <h3>Monitor Artifacts</h3>
   <table>
-    <thead><tr><th>Name</th><th>Query</th><th>Schedule</th><th>Path</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Topic</th>
+        <th>Artifact</th>
+        <th>Path</th>
+      </tr>
+    </thead>
     <tbody>
-      {% for topic in topics %}
+      {% for topic in latest_summary.topics %} {% if topic.monitor_diff_path %}
       <tr>
         <td>{{ topic.name }}</td>
-        <td>{{ topic.query }}</td>
-        <td>{{ topic.schedule }}</td>
-        <td><code>{{ topic._path }}</code></td>
+        <td><span class="badge">diff</span></td>
+        <td><code class="text-sm">{{ topic.monitor_diff_path }}</code></td>
       </tr>
-      {% endfor %}
+      {% endif %} {% if topic.monitor_trigger_results_path %}
+      <tr>
+        <td>{{ topic.name }}</td>
+        <td><span class="badge warn">triggers</span></td>
+        <td>
+          <code class="text-sm">{{ topic.monitor_trigger_results_path }}</code>
+        </td>
+      </tr>
+      {% endif %} {% endfor %}
     </tbody>
   </table>
-</section>
-
-<section class="card">
-  <h2>Create / Update Monitor</h2>
-  <form id="monitor-create-form">
-    <label>Question
-      <input type="text" name="question" value="Monitor NVIDIA stock signals" />
-    </label>
-    <label>Schedule
-      <input type="text" name="schedule" value="0 */6 * * *" />
-    </label>
-    <button type="submit">Create/Update Monitor</button>
-  </form>
-  <h3>Unregister Monitor</h3>
-  <form id="monitor-unregister-form">
-    <label>Monitor Name
-      <input type="text" name="name" value="nvidia_stock_signals" />
-    </label>
-    <button type="submit">Unregister</button>
-  </form>
-  <pre id="monitor-log" class="log">curl -X POST http://127.0.0.1:8080/api/v1/monitor/topics \
-  -H 'content-type: application/json' \
-  -d '{"question":"Monitor NVIDIA stock","schedule":"0 */6 * * *"}'</pre>
-</section>
-
-<section class="card">
-  <h2>Latest Automation Summary</h2>
-  {% if latest_summary %}
-  <pre class="log">{{ latest_summary | tojson(indent=2) }}</pre>
-  {% if latest_summary.topics %}
-  <h3>Latest Monitor Artifacts</h3>
-  <ul>
-    {% for topic in latest_summary.topics %}
-      {% if topic.monitor_diff_path %}
-      <li>{{ topic.name }} diff: <code>{{ topic.monitor_diff_path }}</code></li>
-      {% endif %}
-      {% if topic.monitor_trigger_results_path %}
-      <li>{{ topic.name }} triggers: <code>{{ topic.monitor_trigger_results_path }}</code></li>
-      {% endif %}
-    {% endfor %}
-  </ul>
   {% endif %}
+
+  <details style="margin-top: 14px">
+    <summary>Raw Summary JSON</summary>
+    <pre class="log">{{ latest_summary | tojson(indent=2) }}</pre>
+  </details>
   {% else %}
-  <p>No summary found under automation audit path.</p>
+  <p class="muted" style="text-align: center; padding: 20px">
+    No automation summary found. Run automation to generate one.
+  </p>
   {% endif %}
-</section>
+</div>
+
 <script>
   const createForm = document.getElementById("monitor-create-form");
   const unregisterForm = document.getElementById("monitor-unregister-form");
   const monitorLog = document.getElementById("monitor-log");
 
   function logLine(line) {
-    monitorLog.textContent += "\\n" + line;
+    const ts = new Date().toLocaleTimeString();
+    monitorLog.textContent += `\n[${ts}] ${line}`;
     monitorLog.scrollTop = monitorLog.scrollHeight;
   }
 
@@ -78,24 +222,39 @@
       question: fd.get("question"),
       schedule: fd.get("schedule"),
     };
+    logLine(`Creating monitor: "${payload.question}"...`);
     const resp = await fetch("/api/v1/monitor/topics", {
       method: "POST",
-      headers: {"content-type": "application/json"},
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
     const text = await resp.text();
-    logLine(`[create] status=${resp.status} body=${text}`);
+    logLine(`[${resp.status}] ${text}`);
+    if (resp.ok) {
+      logLine("✓ Monitor created. Refresh page to see it in the topic list.");
+    }
   });
 
   unregisterForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const fd = new FormData(unregisterForm);
     const name = fd.get("name");
-    const resp = await fetch(`/api/v1/monitor/topics/${encodeURIComponent(name)}/unregister`, {
-      method: "POST",
-    });
+    if (!name) {
+      logLine("Error: provide a monitor name");
+      return;
+    }
+    logLine(`Unregistering monitor: "${name}"...`);
+    const resp = await fetch(
+      `/api/v1/monitor/topics/${encodeURIComponent(name)}/unregister`,
+      {
+        method: "POST",
+      },
+    );
     const text = await resp.text();
-    logLine(`[unregister] status=${resp.status} body=${text}`);
+    logLine(`[${resp.status}] ${text}`);
+    if (resp.ok) {
+      logLine("✓ Monitor unregistered. Refresh page to update.");
+    }
   });
 </script>
 {% endblock %}
