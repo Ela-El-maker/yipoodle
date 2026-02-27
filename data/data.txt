@@ -1,3 +1,0 @@
-This is a tiny training corpus for a character-level GPT model.
-It is intentionally small and only used for smoke tests.
-The model should learn local character transitions.
