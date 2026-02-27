@@ -157,7 +157,7 @@ The automation layer also supports operational workflows beyond the core run:
 
 ## What Yipoodle Is NOT
 
-- **Not a chatbot**: It doesn't generate conversational responses. Reports are structured documents.
+- **Not an open-ended agent**: v1 chat UI is deterministic mode-dispatch over ASK/QUERY/RESEARCH/NOTES/MONITOR/AUTOMATION, not autonomous multi-agent planning.
 - **Not a search engine**: It synthesizes and validates, not just retrieves.
 - **Not an LLM wrapper**: No generative model is used for report content. Everything is deterministic.
 - **Not a paper manager**: It doesn't replace Zotero or Mendeley. It automates the research pipeline from discovery to validated report.

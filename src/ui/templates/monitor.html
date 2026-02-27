@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Monitor Topics</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Query</th><th>Schedule</th><th>Path</th></tr></thead>
+    <tbody>
+      {% for topic in topics %}
+      <tr>
+        <td>{{ topic.name }}</td>
+        <td>{{ topic.query }}</td>
+        <td>{{ topic.schedule }}</td>
+        <td><code>{{ topic._path }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Create / Update Monitor</h2>
+  <form id="monitor-create-form">
+    <label>Question
+      <input type="text" name="question" value="Monitor NVIDIA stock signals" />
+    </label>
+    <label>Schedule
+      <input type="text" name="schedule" value="0 */6 * * *" />
+    </label>
+    <button type="submit">Create/Update Monitor</button>
+  </form>
+  <h3>Unregister Monitor</h3>
+  <form id="monitor-unregister-form">
+    <label>Monitor Name
+      <input type="text" name="name" value="nvidia_stock_signals" />
+    </label>
+    <button type="submit">Unregister</button>
+  </form>
+  <pre id="monitor-log" class="log">curl -X POST http://127.0.0.1:8080/api/v1/monitor/topics \
+  -H 'content-type: application/json' \
+  -d '{"question":"Monitor NVIDIA stock","schedule":"0 */6 * * *"}'</pre>
+</section>
+
+<section class="card">
+  <h2>Latest Automation Summary</h2>
+  {% if latest_summary %}
+  <pre class="log">{{ latest_summary | tojson(indent=2) }}</pre>
+  {% if latest_summary.topics %}
+  <h3>Latest Monitor Artifacts</h3>
+  <ul>
+    {% for topic in latest_summary.topics %}
+      {% if topic.monitor_diff_path %}
+      <li>{{ topic.name }} diff: <code>{{ topic.monitor_diff_path }}</code></li>
+      {% endif %}
+      {% if topic.monitor_trigger_results_path %}
+      <li>{{ topic.name }} triggers: <code>{{ topic.monitor_trigger_results_path }}</code></li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <p>No summary found under automation audit path.</p>
+  {% endif %}
+</section>
+<script>
+  const createForm = document.getElementById("monitor-create-form");
+  const unregisterForm = document.getElementById("monitor-unregister-form");
+  const monitorLog = document.getElementById("monitor-log");
+
+  function logLine(line) {
+    monitorLog.textContent += "\\n" + line;
+    monitorLog.scrollTop = monitorLog.scrollHeight;
+  }
+
+  createForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fd = new FormData(createForm);
+    const payload = {
+      question: fd.get("question"),
+      schedule: fd.get("schedule"),
+    };
+    const resp = await fetch("/api/v1/monitor/topics", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    const text = await resp.text();
+    logLine(`[create] status=${resp.status} body=${text}`);
+  });
+
+  unregisterForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fd = new FormData(unregisterForm);
+    const name = fd.get("name");
+    const resp = await fetch(`/api/v1/monitor/topics/${encodeURIComponent(name)}/unregister`, {
+      method: "POST",
+    });
+    const text = await resp.text();
+    logLine(`[unregister] status=${resp.status} body=${text}`);
+  });
+</script>
+{% endblock %}

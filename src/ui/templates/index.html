@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Run Console</h2>
+  <form id="run-form">
+    <label>Mode
+      <select name="mode" id="mode">
+        {% for mode in modes %}
+        <option value="{{ mode }}">{{ mode }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Question
+      <textarea name="question" id="question" rows="3" placeholder="Ask a question or monitoring prompt"></textarea>
+    </label>
+
+    <label>Index
+      <select name="index" id="index">
+        {% for idx in indexes %}
+        <option value="{{ idx }}">{{ idx }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Sources Config
+      <input type="text" name="sources_config" id="sources_config" value="{{ sources_config }}" />
+    </label>
+
+    <label>Automation Config
+      <input type="text" name="automation_config" id="automation_config" value="{{ automation_config }}" />
+    </label>
+
+    <label>Output Path (optional)
+      <input type="text" name="output_path" id="output_path" />
+    </label>
+
+    <label>Options JSON
+      <textarea name="options" id="options" rows="8">{}</textarea>
+    </label>
+
+    <button type="submit">Start Run</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Run Status</h2>
+  <div id="run-meta">No run started.</div>
+  <pre id="run-log" class="log"></pre>
+</section>
+
+<script>
+  const form = document.getElementById("run-form");
+  const runMeta = document.getElementById("run-meta");
+  const runLog = document.getElementById("run-log");
+
+  function appendLog(line) {
+    runLog.textContent += line + "\n";
+    runLog.scrollTop = runLog.scrollHeight;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    runLog.textContent = "";
+
+    let options = {};
+    const rawOptions = document.getElementById("options").value.trim();
+    if (rawOptions) {
+      try {
+        options = JSON.parse(rawOptions);
+      } catch (err) {
+        runMeta.textContent = "Invalid options JSON: " + err;
+        return;
+      }
+    }
+
+    const payload = {
+      mode: document.getElementById("mode").value,
+      question: document.getElementById("question").value || null,
+      index: document.getElementById("index").value || null,
+      sources_config: document.getElementById("sources_config").value,
+      automation_config: document.getElementById("automation_config").value,
+      output_path: document.getElementById("output_path").value || null,
+      options,
+    };
+
+    const resp = await fetch("/api/v1/runs", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      runMeta.textContent = "Failed to start run: " + body;
+      return;
+    }
+
+    const created = await resp.json();
+    runMeta.innerHTML = `Run <code>${created.run_id}</code> queued. <a href="/runs?run_id=${created.run_id}">Open details</a>`;
+
+    if (!!window.EventSource) {
+      const es = new EventSource(created.events_url);
+      es.addEventListener("run_event", (evt) => {
+        try {
+          const item = JSON.parse(evt.data);
+          appendLog(`[${item.level}] ${item.message} ${JSON.stringify(item.payload || {})}`);
+        } catch (_e) {
+          appendLog(evt.data);
+        }
+      });
+      es.addEventListener("run_final", (evt) => {
+        appendLog(`Final: ${evt.data}`);
+        es.close();
+      });
+      es.addEventListener("error", () => {
+        appendLog("Event stream error (falling back to status polling)");
+        es.close();
+      });
+    } else {
+      appendLog("SSE not supported in this browser.");
+    }
+  });
+</script>
+{% endblock %}

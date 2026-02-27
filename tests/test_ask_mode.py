@@ -79,3 +79,36 @@ def test_run_ask_mode_writes_sidecar(tmp_path) -> None:
     assert payload["out_path"] == str(out)
     assert data["mode"] == "ask"
     assert data["ask_handler_used"] == "direct_arithmetic"
+
+
+def test_ask_mode_model_fallback(monkeypatch) -> None:
+    cfg = load_router_config(None)
+    cfg["router"]["ask"]["model_fallback"] = {
+        "enabled": True,
+        "base_url": "https://example.test/v1",
+        "api_key": "x",
+        "model": "demo",
+        "timeout_sec": 5,
+        "max_tokens": 128,
+        "temperature": 0.2,
+    }
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Barack Obama was the 44th President of the United States."}}]}
+
+    def _fake_post(url, headers, json, timeout):  # noqa: A002
+        assert url == "https://example.test/v1/chat/completions"
+        assert headers["Authorization"] == "Bearer x"
+        assert json["model"] == "demo"
+        assert timeout == 5
+        return _Resp()
+
+    monkeypatch.setattr("src.apps.ask_mode.requests.post", _fake_post)
+    md, meta = answer_ask_question(question="Who is Barack Obama?", router_cfg=cfg, glossary_path=None)
+    assert "44th President" in md
+    assert meta["ask_handler_used"] == "model_fallback"
+    assert meta["deterministic"] is False

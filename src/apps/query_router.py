@@ -31,8 +31,16 @@ _DEFAULT_CFG: dict[str, Any] = {
         "ask": {
             "max_words_short_question": 14,
             "citation_notice_on_keywords": ["cite", "citation", "literature", "sources", "papers"],
-            "definition_patterns": ["what is", "define", "explain"],
-            "model_fallback": {"enabled": False},
+            "definition_patterns": ["what is", "what are", "who is", "who are", "who was", "define", "explain"],
+            "model_fallback": {
+                "enabled": False,
+                "model": "gpt-4o-mini",
+                "base_url": None,
+                "api_key": None,
+                "timeout_sec": 15,
+                "max_tokens": 256,
+                "temperature": 0.2,
+            },
         },
         "monitor": {
             "intent_keywords": ["monitor", "track", "notify", "alert"],
@@ -139,7 +147,7 @@ def route_query(question: str, cfg: dict[str, Any], explicit_mode: str | None = 
     )
     def_pats = [str(x).strip().lower() for x in (ask_cfg.get("definition_patterns", []) or []) if str(x).strip()]
     def_hits = [p for p in def_pats if t.startswith(p + " ") or t == p]
-    def_anywhere = bool(re.search(r"\b(what is|what are|define|explain)\b", t))
+    def_anywhere = bool(re.search(r"\b(what is|what are|who is|who are|who was|define|explain)\b", t))
     short_cap = int(ask_cfg.get("max_words_short_question", 14) or 14)
     short = len(q.split()) <= short_cap
     if has_unit or ((def_hits or def_anywhere) and short):

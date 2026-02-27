@@ -43,6 +43,12 @@ def test_route_query_definition_keyword_anywhere_to_ask() -> None:
     assert out.mode == "ask"
 
 
+def test_route_query_factoid_who_is_to_ask() -> None:
+    cfg = load_router_config(None)
+    out = route_query("Who is Barack Obama?", cfg)
+    assert out.mode == "ask"
+
+
 def test_route_query_ambiguous_defaults_research() -> None:
     cfg = load_router_config(None)
     out = route_query("Compare optimization techniques for sparse transformers in long-context forecasting", cfg)
