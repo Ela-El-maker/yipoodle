@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="section-header">
+  <h2>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Run History
+  </h2>
+  <span class="badge">{{ runs | length }} run{{ 's' if runs | length != 1 else '' }}</span>
+</div>
+
 <section class="card">
-  <h2>Recent Runs</h2>
   <table>
     <thead>
       <tr>
@@ -14,38 +21,97 @@
     </thead>
     <tbody>
       {% for run in runs %}
-      <tr>
-        <td><a href="/runs?run_id={{ run.run_id }}"><code>{{ run.run_id }}</code></a></td>
-        <td>{{ run.mode }}</td>
-        <td>{{ run.status }}</td>
-        <td>{{ run.question }}</td>
-        <td>{{ run.created_at }}</td>
+      <tr{% if selected and selected.run_id == run.run_id %} style="background:var(--accent-glow);"{% endif %}>
+        <td><a href="/runs?run_id={{ run.run_id }}" style="color:var(--accent);text-decoration:none;font-weight:600;"><code>{{ run.run_id[:12] }}…</code></a></td>
+        <td><span class="badge">{{ run.mode }}</span></td>
+        <td>
+          {% if run.status == 'done' or run.status == 'completed' %}
+          <span class="status-badge done"><span class="status-dot ok"></span>{{ run.status }}</span>
+          {% elif run.status == 'running' %}
+          <span class="status-badge running"><span class="status-dot pending"></span>{{ run.status }}</span>
+          {% elif run.status == 'failed' or run.status == 'error' %}
+          <span class="status-badge failed"><span class="status-dot error"></span>{{ run.status }}</span>
+          {% elif run.status == 'queued' %}
+          <span class="status-badge queued"><span class="status-dot warn"></span>{{ run.status }}</span>
+          {% elif run.status == 'cancelled' %}
+          <span class="status-badge cancelled"><span class="status-dot"></span>{{ run.status }}</span>
+          {% else %}
+          <span class="status-badge">{{ run.status }}</span>
+          {% endif %}
+        </td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ run.question or '—' }}</td>
+        <td class="muted text-sm">{{ run.created_at }}</td>
       </tr>
       {% endfor %}
+      {% if not runs %}
+      <tr><td colspan="5" class="muted" style="text-align:center;padding:24px;">No runs yet. Start one from the <a href="/run-console" style="color:var(--accent);">Run Console</a>.</td></tr>
+      {% endif %}
     </tbody>
   </table>
 </section>
 
 {% if selected %}
 <section class="card">
-  <h2>Run Detail: <code>{{ selected.run_id }}</code></h2>
-  <p>Status: <strong>{{ selected.status }}</strong></p>
-  <p>Mode: <strong>{{ selected.mode }}</strong></p>
-  <p>Question: {{ selected.question }}</p>
+  <div class="section-header" style="margin-bottom:12px;">
+    <h2>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Run Detail
+    </h2>
+    <code>{{ selected.run_id }}</code>
+  </div>
+
+  <div class="health-grid" style="margin-bottom:16px;">
+    <div class="health-card">
+      <div class="health-card-title">Status</div>
+      <div style="margin-top:8px;">
+        {% if selected.status == 'done' or selected.status == 'completed' %}
+        <span class="status-badge done"><span class="status-dot ok"></span>{{ selected.status }}</span>
+        {% elif selected.status == 'running' %}
+        <span class="status-badge running"><span class="status-dot pending"></span>{{ selected.status }}</span>
+        {% elif selected.status == 'failed' or selected.status == 'error' %}
+        <span class="status-badge failed"><span class="status-dot error"></span>{{ selected.status }}</span>
+        {% else %}
+        <span class="status-badge">{{ selected.status }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-title">Mode</div>
+      <div class="health-card-value">{{ selected.mode }}</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-title">Question</div>
+      <div style="font-size:13px;margin-top:8px;">{{ selected.question or '—' }}</div>
+    </div>
+  </div>
+
   {% if selected.error_message %}
-  <p class="error">Error: {{ selected.error_message }}</p>
+  <div class="card" style="border-color:var(--error);background:var(--error-bg);">
+    <p class="error" style="margin:0;">{{ selected.error_message }}</p>
+  </div>
   {% endif %}
 
+  {% if selected.details and selected.details.artifacts %}
   <h3>Artifacts</h3>
-  <ul>
-    {% for key, value in (selected.details.artifacts or {}).items() %}
-      <li><a href="/api/v1/runs/{{ selected.run_id }}/artifacts/{{ key }}" target="_blank" rel="noreferrer">{{ key }}</a> <code>{{ value }}</code></li>
+  <table>
+    <thead><tr><th>Key</th><th>Path</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for key, value in selected.details.artifacts.items() %}
+      <tr>
+        <td><strong>{{ key }}</strong></td>
+        <td><code class="text-sm">{{ value }}</code></td>
+        <td><a href="/api/v1/runs/{{ selected.run_id }}/artifacts/{{ key }}" target="_blank" rel="noreferrer" class="badge">Download →</a></td>
+      </tr>
     {% endfor %}
-  </ul>
+    </tbody>
+  </table>
+  {% endif %}
 
-  <h3>Events</h3>
-  <pre class="log">{% for event in events %}[{{ event.level }}] {{ event.message }} {{ event.payload }}
+  <details style="margin-top:16px;">
+    <summary>Event Log ({{ events | length }} events)</summary>
+    <pre class="log">{% for event in events %}[{{ event.level | upper }}] {{ event.message }}{% if event.payload %} {{ event.payload }}{% endif %}
 {% endfor %}</pre>
+  </details>
 </section>
 {% endif %}
 {% endblock %}
