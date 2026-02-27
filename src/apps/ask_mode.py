@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import json
+import os
 import re
 
+import requests
 import yaml
 
 from src.apps.direct_answer import try_direct_answer
@@ -91,8 +93,8 @@ def _extract_definition_terms(question: str, glossary: dict[str, str]) -> list[s
     candidates: list[str] = []
 
     patterns = [
-        r"^\s*(?:what is|what are|define|explain)\s+(.+?)\s*$",
-        r".*?\b(?:what is|what are|define|explain)\s+(.+?)(?:\?|$)",
+        r"^\s*(?:what is|what are|who is|who are|who was|define|explain)\s+(.+?)\s*$",
+        r".*?\b(?:what is|what are|who is|who are|who was|define|explain)\s+(.+?)(?:\?|$)",
     ]
     for pat in patterns:
         m = re.match(pat, q, flags=re.IGNORECASE)
@@ -112,6 +114,76 @@ def _extract_definition_terms(question: str, glossary: dict[str, str]) -> list[s
             seen.add(c)
             out.append(c)
     return out
+
+
+def _ask_model_fallback(question: str, ask_cfg: dict[str, Any]) -> tuple[str | None, str | None]:
+    mf = ask_cfg.get("model_fallback", {}) if isinstance(ask_cfg.get("model_fallback"), dict) else {}
+    if not bool(mf.get("enabled", False)):
+        return None, None
+
+    base_url = (
+        mf.get("base_url")
+        or os.getenv("ASK_BASE_URL")
+        or os.getenv("DEEPSEEK_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or "https://api.openai.com/v1"
+    )
+    api_key = (
+        mf.get("api_key")
+        or os.getenv("ASK_API_KEY")
+        or os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
+    model = (
+        mf.get("model")
+        or os.getenv("ASK_MODEL")
+        or os.getenv("DEEPSEEK_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or "gpt-4o-mini"
+    )
+    timeout_sec = float(mf.get("timeout_sec", 15))
+    max_tokens = int(mf.get("max_tokens", 256))
+    temperature = float(mf.get("temperature", 0.2))
+    if not api_key:
+        return None, "ask_model_fallback_missing_api_key"
+
+    system_prompt = str(
+        mf.get("system_prompt")
+        or "You are a concise assistant. Answer directly in 2-5 sentences. Do not invent citations."
+    )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    try:
+        resp = requests.post(
+            str(base_url).rstrip("/") + "/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=timeout_sec,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = (
+            (((data.get("choices") or [{}])[0].get("message") or {}).get("content"))
+            if isinstance(data, dict)
+            else None
+        )
+        text = str(content or "").strip()
+        if not text:
+            return None, "ask_model_fallback_empty_response"
+        return text, None
+    except Exception as exc:
+        return None, f"ask_model_fallback_error:{exc}"
 
 
 def answer_ask_question(
@@ -176,6 +248,20 @@ def answer_ask_question(
             }
             return md, meta
 
+    model_answer, model_err = _ask_model_fallback(question, ask_cfg)
+    if model_answer:
+        md = f"# Ask\n\n{model_answer}\n"
+        if citation_notice:
+            md += f"\n> {_CITATION_NOTICE}\n"
+        meta = {
+            "mode": "ask",
+            "ask_handler_used": "model_fallback",
+            "ask_fallback_used": True,
+            "deterministic": False,
+            "no_citation_notice_emitted": citation_notice,
+        }
+        return md, meta
+
     if def_terms:
         term_preview = def_terms[0]
         fallback = (
@@ -191,6 +277,7 @@ def answer_ask_question(
             "ask_fallback_used": True,
             "deterministic": True,
             "no_citation_notice_emitted": citation_notice,
+            "model_fallback_error": model_err,
         }
         return md, meta
 
@@ -204,6 +291,7 @@ def answer_ask_question(
         "ask_fallback_used": True,
         "deterministic": True,
         "no_citation_notice_emitted": citation_notice,
+        "model_fallback_error": model_err,
     }
     return md, meta
 

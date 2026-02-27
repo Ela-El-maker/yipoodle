@@ -114,8 +114,8 @@ def validate_online_semantic_claim_support(
 ) -> OnlineSemanticResult:
     import time
 
-    base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+    base_url = base_url or os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     if not api_key:
         raise RuntimeError("online_semantic_missing_api_key")
 
@@ -171,4 +171,3 @@ def validate_online_semantic_claim_support(
         latency_ms=latency_ms,
         error=None,
     )
-

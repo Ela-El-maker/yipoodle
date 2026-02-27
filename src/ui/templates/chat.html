@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="chat-shell">
+  <aside class="chat-sidebar card">
+    <div class="row">
+      <h2>Chats</h2>
+      <button id="new-session" type="button">New</button>
+    </div>
+    <ul id="sessions" class="sessions"></ul>
+  </aside>
+
+  <section class="chat-main card">
+    <div id="chat-meta" class="muted">Select or create a chat session.</div>
+    <div id="messages" class="messages"></div>
+
+    <form id="chat-form" class="chat-form">
+      <label>Mode
+        <select id="mode">
+          {% for mode in modes %}
+          <option value="{{ mode }}" {% if mode == default_mode %}selected{% endif %}>{{ mode }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Message
+        <textarea id="message-input" rows="4" placeholder="Ask anything..."></textarea>
+      </label>
+      <label>Options JSON
+        <textarea id="options" rows="6">{}</textarea>
+      </label>
+      <button type="submit">Send</button>
+    </form>
+  </section>
+</section>
+
+<script>
+  const sessionsEl = document.getElementById("sessions");
+  const messagesEl = document.getElementById("messages");
+  const metaEl = document.getElementById("chat-meta");
+  const formEl = document.getElementById("chat-form");
+  const newSessionBtn = document.getElementById("new-session");
+  const messageInput = document.getElementById("message-input");
+  const modeSelect = document.getElementById("mode");
+  const optionsEl = document.getElementById("options");
+  let currentSessionId = null;
+  let currentEventSource = null;
+
+  function esc(s) {
+    return (s || "").replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[m]));
+  }
+
+  function renderSessions(items) {
+    sessionsEl.innerHTML = "";
+    for (const row of items) {
+      const li = document.createElement("li");
+      li.className = "session-item" + (row.id === currentSessionId ? " active" : "");
+      li.innerHTML = `<button type="button" data-session-id="${row.id}">${esc(row.title || row.id)}</button>`;
+      sessionsEl.appendChild(li);
+    }
+    for (const btn of sessionsEl.querySelectorAll("button[data-session-id]")) {
+      btn.addEventListener("click", () => {
+        selectSession(btn.getAttribute("data-session-id"));
+      });
+    }
+  }
+
+  function renderMessages(items) {
+    messagesEl.innerHTML = "";
+    for (const row of items) {
+      const div = document.createElement("div");
+      div.className = "msg " + row.role;
+      const meta = row.metadata || {};
+      const details = meta.details || {};
+      let sourceType = "deterministic";
+      if (details.ask_handler_used === "model_fallback" || details.deterministic === false) {
+        sourceType = "model_fallback";
+      }
+      const modeBadge = row.mode_used ? `<span class="badge">${esc(row.mode_used)}</span>` : "";
+      const sourceBadge = row.role === "assistant" ? `<span class="badge ${sourceType === "model_fallback" ? "warn" : ""}">${esc(sourceType)}</span>` : "";
+      const status = row.role === "assistant"
+        ? `<div class="muted">status: ${esc(row.status)} ${modeBadge} ${sourceBadge}</div>`
+        : "";
+      const err = row.error_message ? `<div class="error">${esc(row.error_message)}</div>` : "";
+      div.innerHTML = `
+        <div class="msg-role">${esc(row.role)}</div>
+        <pre class="msg-body">${esc(row.content_markdown || "")}</pre>
+        ${status}
+        ${err}
+      `;
+      messagesEl.appendChild(div);
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function loadSessions() {
+    const resp = await fetch("/api/v1/chat/sessions");
+    if (!resp.ok) return;
+    const body = await resp.json();
+    renderSessions(body.sessions || []);
+    if (!currentSessionId && body.sessions && body.sessions.length > 0) {
+      await selectSession(body.sessions[0].id);
+    }
+  }
+
+  async function createSession() {
+    const resp = await fetch("/api/v1/chat/sessions", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({}),
+    });
+    if (!resp.ok) return null;
+    const row = await resp.json();
+    await loadSessions();
+    await selectSession(row.id);
+    return row.id;
+  }
+
+  async function selectSession(sessionId) {
+    currentSessionId = sessionId;
+    await loadSessions();
+    await loadMessages();
+  }
+
+  async function loadMessages() {
+    if (!currentSessionId) {
+      messagesEl.innerHTML = "";
+      metaEl.textContent = "Select or create a chat session.";
+      return;
+    }
+    const resp = await fetch(`/api/v1/chat/sessions/${encodeURIComponent(currentSessionId)}/messages`);
+    if (!resp.ok) return;
+    const body = await resp.json();
+    metaEl.innerHTML = `Session <code>${esc(currentSessionId)}</code> • ${body.count} messages`;
+    renderMessages(body.messages || []);
+  }
+
+  function subscribeEvents(eventsUrl, assistantMessageId) {
+    if (currentEventSource) {
+      currentEventSource.close();
+      currentEventSource = null;
+    }
+    if (!window.EventSource) return;
+    currentEventSource = new EventSource(eventsUrl);
+    currentEventSource.addEventListener("chat_event", async (_evt) => {
+      await loadMessages();
+    });
+    currentEventSource.addEventListener("chat_final", async (_evt) => {
+      await loadMessages();
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+      }
+    });
+    currentEventSource.addEventListener("error", async () => {
+      await loadMessages();
+    });
+  }
+
+  newSessionBtn.addEventListener("click", async () => {
+    await createSession();
+  });
+
+  formEl.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!currentSessionId) {
+      const sid = await createSession();
+      if (!sid) return;
+    }
+    const content = messageInput.value.trim();
+    if (!content) return;
+
+    let options = {};
+    try {
+      options = JSON.parse(optionsEl.value || "{}");
+    } catch (err) {
+      metaEl.textContent = "Invalid options JSON: " + err;
+      return;
+    }
+
+    const payload = {
+      content,
+      mode: modeSelect.value,
+      options,
+      stream: true,
+    };
+    const resp = await fetch(`/api/v1/chat/sessions/${encodeURIComponent(currentSessionId)}/messages`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      metaEl.textContent = "Failed to send: " + (await resp.text());
+      return;
+    }
+    const created = await resp.json();
+    messageInput.value = "";
+    await loadMessages();
+    subscribeEvents(created.events_url, created.assistant_message_id);
+  });
+
+  loadSessions();
+</script>
+{% endblock %}

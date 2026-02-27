@@ -258,6 +258,33 @@ python -m src.cli query --question "Create study notes on transformer failure mo
   --index data/indexes/bm25_index.json
 ```
 
+### 6. Operator UI (FastAPI + HTMX)
+
+```bash
+# Start local operator console
+python -m src.cli serve-ui --config config/ui.yaml --host 127.0.0.1 --port 8080
+```
+
+Then open:
+
+- `http://127.0.0.1:8080/` for the chat console (request/response + live streaming)
+- `http://127.0.0.1:8080/run-console` for the legacy run form
+- `http://127.0.0.1:8080/runs` for run/artifact browsing
+- `http://127.0.0.1:8080/monitor` for monitor operations
+- `http://127.0.0.1:8080/api/v1/docs` for API docs
+
+Chat API quick start:
+
+```bash
+# create session
+curl -sX POST http://127.0.0.1:8080/api/v1/chat/sessions -H 'content-type: application/json' -d '{}' | jq
+
+# send message
+curl -sX POST "http://127.0.0.1:8080/api/v1/chat/sessions/<session_id>/messages" \
+  -H 'content-type: application/json' \
+  -d '{"content":"what is an algorithm","mode":"auto","options":{},"stream":true}' | jq
+```
+
 ### 6. Make Shortcuts
 
 ```bash

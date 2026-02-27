@@ -953,6 +953,22 @@ def cmd_run_automation(args: argparse.Namespace) -> None:
     print(run_dir)
 
 
+def cmd_serve_ui(args: argparse.Namespace) -> None:
+    try:
+        import uvicorn
+    except Exception as exc:
+        raise SystemExit(f"uvicorn is required for serve-ui: {exc}") from exc
+
+    from src.ui.app import create_app
+    from src.ui.settings import load_ui_settings
+
+    settings = load_ui_settings(args.config)
+    host = args.host or settings.host
+    port = int(args.port if args.port is not None else settings.port)
+    app = create_app(args.config)
+    uvicorn.run(app, host=host, port=port, reload=bool(args.reload))
+
+
 def cmd_migrate_extraction_meta(args: argparse.Namespace) -> None:
     stats = migrate_extraction_meta(corpus_dir=args.corpus, dry_run=args.dry_run)
     print(json.dumps(stats, indent=2))
@@ -1962,6 +1978,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run-automation", help="run scheduled automation workflow defined in automation config")
     p.add_argument("--config", default="config/automation.yaml")
     p.set_defaults(func=cmd_run_automation)
+
+    p = sub.add_parser("serve-ui", help="start FastAPI operator UI")
+    p.add_argument("--config", default="config/ui.yaml")
+    p.add_argument("--host", default=None)
+    p.add_argument("--port", type=int, default=None)
+    p.add_argument("--reload", action="store_true")
+    p.set_defaults(func=cmd_serve_ui)
 
     p = sub.add_parser("research-template", help="run a multi-query research template and persist a session pack")
     p.add_argument("--template", required=True)

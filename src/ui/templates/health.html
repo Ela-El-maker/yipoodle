@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Health</h2>
+  <pre class="log">{{ info | tojson(indent=2) }}</pre>
+  <p>API health endpoint: <a href="/api/v1/health" target="_blank" rel="noreferrer">/api/v1/health</a></p>
+</section>
+{% endblock %}

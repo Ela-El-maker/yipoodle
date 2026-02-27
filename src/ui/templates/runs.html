@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Recent Runs</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Run ID</th>
+        <th>Mode</th>
+        <th>Status</th>
+        <th>Question</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td><a href="/runs?run_id={{ run.run_id }}"><code>{{ run.run_id }}</code></a></td>
+        <td>{{ run.mode }}</td>
+        <td>{{ run.status }}</td>
+        <td>{{ run.question }}</td>
+        <td>{{ run.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if selected %}
+<section class="card">
+  <h2>Run Detail: <code>{{ selected.run_id }}</code></h2>
+  <p>Status: <strong>{{ selected.status }}</strong></p>
+  <p>Mode: <strong>{{ selected.mode }}</strong></p>
+  <p>Question: {{ selected.question }}</p>
+  {% if selected.error_message %}
+  <p class="error">Error: {{ selected.error_message }}</p>
+  {% endif %}
+
+  <h3>Artifacts</h3>
+  <ul>
+    {% for key, value in (selected.details.artifacts or {}).items() %}
+      <li><a href="/api/v1/runs/{{ selected.run_id }}/artifacts/{{ key }}" target="_blank" rel="noreferrer">{{ key }}</a> <code>{{ value }}</code></li>
+    {% endfor %}
+  </ul>
+
+  <h3>Events</h3>
+  <pre class="log">{% for event in events %}[{{ event.level }}] {{ event.message }} {{ event.payload }}
+{% endfor %}</pre>
+</section>
+{% endif %}
+{% endblock %}
